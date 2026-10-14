@@ -1,7 +1,7 @@
 // Fonctions pures du module Progression (variante 1, « barre fine et chapelet ») : les étapes
 // viennent de la liste de tâches de Claude (TodoWrite, TaskCreate, TaskUpdate).
 
-import type { BlocAction, EtapeProgression, Progression, SorteAction } from '../types'
+import type { ActionJournal, BlocAction, DescriptionAction, EtapeProgression, Progression, SorteAction } from '../types'
 
 /** Par défaut, une tâche terminée reste dans la bande, avec sa coche ✓, ce temps-là (réglable). */
 export const AFFICHAGE_FIN_MS = 15_000
@@ -30,10 +30,10 @@ export const terminee = (p: Progression) => p.etapes.length > 0 && p.etapes.ever
  */
 export function demarrer(p: Progression | null, texte: string, maintenant: number): Progression {
   if (p !== null && !p.exemple && p.etapes.length > 0 && !terminee(p)) {
-    return { ...p, fin: null }
+    return { ...p, fin: null, effacee: false }
   }
   if (texte.trim() === '' && p !== null && !p.exemple) {
-    return { ...p, fin: null }
+    return { ...p, fin: null, effacee: false }
   }
   return nouvelle(texte, maintenant)
 }
@@ -177,24 +177,16 @@ export function chapelet(p: Progression): { faits: string; courant: string; rest
 }
 
 /**
- * Visible une fois la tâche en marche depuis `apparaitMs`, puis `resteMs` après sa fin (0 : plus du
- * tout) ; jamais sans étapes ni actions. Une tâche finie avant `apparaitMs` ne s'affiche pas du tout.
+ * Visible pendant la tâche, puis `resteMs` après sa fin (0 : plus du tout ; Infinity : jusqu'à un
+ * clic, qui l'efface) ; jamais sans étapes ni actions.
  */
-export function visible(
-  p: Progression | null,
-  maintenant: number,
-  resteMs: number = AFFICHAGE_FIN_MS,
-  apparaitMs = 0,
-) {
-  if (p === null || (p.etapes.length === 0 && (p.blocs ?? []).length === 0)) {
+export function visible(p: Progression | null, maintenant: number, resteMs: number = AFFICHAGE_FIN_MS) {
+  if (p === null || p.effacee === true || (p.etapes.length === 0 && (p.blocs ?? []).length === 0)) {
     return false
   }
   if (p.exemple) {
     // Une minuterie retire l'exemple après EXEMPLE_MS.
     return true
-  }
-  if ((p.fin ?? maintenant) - p.debut < apparaitMs) {
-    return false
   }
   return p.fin === null || maintenant - p.fin < resteMs
 }
@@ -214,6 +206,18 @@ export function exemple(maintenant: number): Progression {
       statut: i < 3 ? 'faite' : i === 3 ? 'en_cours' : 'attente',
       debut: i <= 3 ? maintenant - (4 - i) * minute : null,
       fin: i < 3 ? maintenant - (3 - i) * minute : null,
+    })),
+    journal: [
+      { nom: 'Read', libelle: 'presets.json', complement: '~/Projets/presets', sorte: 'lecture', s: 230, ms: 2_000 },
+      { nom: 'Bash', libelle: 'Convertit les presets', complement: 'node convertir.mjs presets.json', sorte: 'bash', s: 160, ms: 41_000 },
+      { nom: 'Edit', libelle: 'presets.json', complement: '~/Projets/presets', sorte: 'modif', s: 100, ms: 3_000 },
+      { nom: 'Bash', libelle: 'Valide le schéma', complement: 'npx ajv validate -s schema.json -d presets.json', sorte: 'bash', s: 12, ms: 0 },
+    ].map(({ s, ms, ...a }, i): ActionJournal => ({
+      ...a,
+      sorte: a.sorte as SorteAction,
+      id: `exemple-action-${i}`,
+      debut: maintenant - s * 1000,
+      fin: ms === 0 ? null : maintenant - s * 1000 + ms,
     })),
   }
 }
@@ -252,31 +256,64 @@ export const NOMS_SORTES: Record<SorteAction, string> = {
   autre: 'Autre',
 }
 
-/** L'outil en clair, pour « En cours » (repris de fil). */
-export function libelleOutil(outil: string, entree: Record<string, unknown>) {
+/** Le journal garde au plus ces actions ; la vue dépliée montre les JOURNAL_LIGNES dernières. */
+export const JOURNAL_MAX = 200
+export const JOURNAL_LIGNES = 6
+
+const premiereLigne = (s: string) => s.split('\n')[0]?.trim() ?? ''
+const couper = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+
+/** L'outil en clair : son nom, ce qu'il touche, et le détail (la commande, le dossier). */
+export function decrireOutil(outil: string, entree: Record<string, unknown>): DescriptionAction {
   const texte = (k: string) => (typeof entree[k] === 'string' ? (entree[k] as string) : '')
   const fichier = (k: string) => texte(k).split('/').pop() ?? ''
-  const court = (s: string) => (s.length > 48 ? `${s.slice(0, 47)}…` : s)
-  let detail = ''
+  // Le dossier du fichier, le dossier personnel abrégé en « ~ ».
+  const dossier = (k: string) =>
+    texte(k)
+      .split('/')
+      .slice(0, -1)
+      .join('/')
+      .replace(/^\/(Users|home)\/[^/]+/, '~')
+  let libelle = ''
+  let complement = ''
   if (outil === 'Bash') {
-    detail = texte('description') || texte('command')
+    libelle = texte('description') || texte('command')
+    complement = texte('description') === '' ? '' : premiereLigne(texte('command'))
   } else if (outil === 'Read' || outil === 'Edit' || outil === 'Write' || outil === 'NotebookEdit') {
-    detail = fichier('file_path') || fichier('notebook_path')
+    libelle = fichier('file_path') || fichier('notebook_path')
+    complement = dossier('file_path') || dossier('notebook_path')
   } else if (outil === 'Grep' || outil === 'Glob') {
-    detail = texte('pattern')
+    libelle = texte('pattern')
+    complement = [texte('path').replace(/^\/(Users|home)\/[^/]+/, '~'), texte('glob')].filter(x => x !== '').join(' ')
   } else if (outil === 'WebFetch') {
-    detail = texte('url')
+    libelle = texte('url')
   } else if (outil === 'WebSearch') {
-    detail = texte('query')
+    libelle = texte('query')
   } else if (outil === 'Agent') {
-    detail = texte('description')
+    libelle = texte('description')
+    complement = texte('subagent_type')
   }
   const nom = outil.startsWith('mcp__') ? outil.split('__').slice(1).join(' · ') : outil
-  return detail === '' ? nom : `${nom} · ${court(detail.split('\n')[0] ?? '')}`
+  return { nom, libelle: couper(premiereLigne(libelle), 48), complement: couper(complement, 80) }
 }
 
-/** Une action commence : elle rejoint le dernier segment s'il est de même sorte. */
-export function debuterAction(p: Progression, id: string, sorte: SorteAction, titre: string, maintenant: number) {
+export const titreAction = (d: DescriptionAction) => (d.libelle === '' ? d.nom : `${d.nom} · ${d.libelle}`)
+
+/** L'outil en clair, pour « En cours » (repris de fil). */
+export const libelleOutil = (outil: string, entree: Record<string, unknown>) => titreAction(decrireOutil(outil, entree))
+
+/**
+ * Une action commence : elle rejoint le dernier segment s'il est de même sorte, et le journal.
+ * Sans description, le titre tient lieu de nom.
+ */
+export function debuterAction(
+  p: Progression,
+  id: string,
+  sorte: SorteAction,
+  titre: string,
+  maintenant: number,
+  description: DescriptionAction = { nom: titre, libelle: '', complement: '' },
+) {
   const blocs = [...(p.blocs ?? [])]
   const dernier = blocs[blocs.length - 1]
   if (dernier !== undefined && dernier.sorte === sorte) {
@@ -296,7 +333,8 @@ export function debuterAction(p: Progression, id: string, sorte: SorteAction, ti
     })
   }
   const comptes = { ...(p.comptes ?? {}), [sorte]: (p.comptes?.[sorte] ?? 0) + 1 }
-  return { ...p, blocs, comptes }
+  const journal = [...(p.journal ?? []), { ...description, id, sorte, debut: maintenant, fin: null }].slice(-JOURNAL_MAX)
+  return { ...p, blocs, comptes, journal }
 }
 
 /** Une action finit : sa durée s'ajoute à son segment. */
@@ -310,7 +348,25 @@ export function finirAction(p: Progression, id: string, maintenant: number): Pro
     delete ouverts[id]
     return { ...b, duree: b.duree + Math.max(0, maintenant - debut), ouverts }
   })
-  return { ...p, blocs }
+  const journal = p.journal?.map(a => (a.id === id && a.fin === null ? { ...a, fin: maintenant } : a))
+  return journal === undefined ? { ...p, blocs } : { ...p, blocs, journal }
+}
+
+export type LigneJournal = ActionJournal & { duree: number; enCours: boolean }
+
+/**
+ * Les dernières actions du journal, la plus récente à la fin, et le nombre de plus anciennes.
+ * Une action restée ouverte à la fin de la tâche (interrompue) compte jusqu'à cette fin.
+ */
+export function lignesJournal(p: Progression, maintenant: number, max = JOURNAL_LIGNES) {
+  const journal = p.journal ?? []
+  const montrees = journal.slice(-max)
+  const lignes: LigneJournal[] = montrees.map(a => ({
+    ...a,
+    duree: Math.max(0, (a.fin ?? p.fin ?? maintenant) - a.debut),
+    enCours: a.fin === null && p.fin === null,
+  }))
+  return { lignes, plus: journal.length - montrees.length }
 }
 
 export type Segment = { sorte: SorteAction; duree: number; enCours: boolean }
@@ -411,13 +467,13 @@ export function pisteSvg(segments: readonly Segment[], part: number, largeur: nu
 }
 
 /** L'exemple sans liste du panneau : les actions d'une publication, en millisecondes. */
-export const EXEMPLE_SANS_LISTE: readonly { outil: string; titre: string; ms: number }[] = [
-  { outil: 'Read', titre: 'Read · README.md', ms: 1500 },
-  { outil: 'Bash', titre: 'Bash · Valide le mod', ms: 2500 },
-  { outil: 'Read', titre: 'Read · CHANGELOG.md', ms: 1000 },
-  { outil: 'Edit', titre: 'Edit · plugin.json', ms: 2000 },
-  { outil: 'Bash', titre: 'Bash · Lance les tests', ms: 5000 },
-  { outil: 'Edit', titre: 'Edit · CHANGELOG.md', ms: 1500 },
-  { outil: 'Bash', titre: 'Bash · Commit, push, tag', ms: 6500 },
-  { outil: 'Bash', titre: 'Bash · Publie la release', ms: 3000 },
+export const EXEMPLE_SANS_LISTE: readonly (DescriptionAction & { ms: number })[] = [
+  { nom: 'Read', libelle: 'README.md', complement: '~/Developer/Plugins/myconfig', ms: 1500 },
+  { nom: 'Bash', libelle: 'Valide le mod', complement: 'claude plugin validate .', ms: 2500 },
+  { nom: 'Read', libelle: 'CHANGELOG.md', complement: '~/Developer/Plugins/myconfig', ms: 1000 },
+  { nom: 'Edit', libelle: 'plugin.json', complement: '~/Developer/Plugins/myconfig/.claude-plugin', ms: 2000 },
+  { nom: 'Bash', libelle: 'Lance les tests', complement: 'claude plugin test .', ms: 5000 },
+  { nom: 'Edit', libelle: 'CHANGELOG.md', complement: '~/Developer/Plugins/myconfig', ms: 1500 },
+  { nom: 'Bash', libelle: 'Commit, push, tag', complement: 'git commit -F - && git push origin main', ms: 6500 },
+  { nom: 'Bash', libelle: 'Publie la release', complement: 'gh release create v0.3.0', ms: 3000 },
 ]

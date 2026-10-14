@@ -26,10 +26,15 @@ export type Reglages = {
   /** Nombre de propositions, de 1 à 5. */
   nombre: number
   disposition: Disposition
-  /** Secondes de travail avant que la Progression apparaisse : 0 (instantané), 5, 10… 30. */
-  apparaitApres: number
-  /** Secondes pendant lesquelles la Progression reste affichée après la fin : 0 (instantané), 5, 10… 30. */
-  resteApres: number
+  /**
+   * Secondes pendant lesquelles la Progression reste affichée après la fin : 0 (instantané), 5, 10
+   * ou 15 ; `null` (jamais) : elle reste jusqu'à un clic sur la barre.
+   */
+  disparaitApres: number | null
+  /** Actions que le journal déplié montre : 6, 12 ou 18 ; `null` : toutes celles qui tiennent. */
+  journalLignes: number | null
+  /** Les commandes Bash ne s'affichent plus dans le chat (sauf celles en erreur). */
+  masquerCommandes: boolean
 }
 
 /** Une limite d'utilisation du forfait (5 heures, hebdomadaire…), telle que la dernière réponse l'a donnée. */
@@ -83,6 +88,26 @@ export type BlocAction = {
   ouverts: Record<string, number>
 }
 
+/** L'outil d'une action, en clair, pour le journal et « En cours ». */
+export type DescriptionAction = {
+  /** L'outil : « Bash », « Read », « github · create_issue ». */
+  nom: string
+  /** Ce qu'il touche, en court : la description de la commande, le fichier, le motif ; vide sinon. */
+  libelle: string
+  /** Le détail : la commande, le dossier du fichier ; vide s'il n'apporte rien. */
+  complement: string
+}
+
+/** Une action du journal, que la Progression déplie d'un clic. */
+export type ActionJournal = DescriptionAction & {
+  /** Le `tool_use_id` de l'appel. */
+  id: string
+  sorte: SorteAction
+  debut: number
+  /** Rien tant que l'action tourne. */
+  fin: number | null
+}
+
 /** La tâche longue en cours : son titre (la consigne), ses étapes, son début et sa fin. */
 export type Progression = {
   titre: string
@@ -96,6 +121,10 @@ export type Progression = {
   blocs?: BlocAction[]
   /** Mode sans liste : nombre d'actions par sorte. */
   comptes?: Partial<Record<SorteAction, number>>
+  /** Les dernières actions du fil principal, la plus récente à la fin (absent avant la 0.6.0). */
+  journal?: ActionJournal[]
+  /** Vrai quand un clic l'a effacée, ou qu'une interruption l'a retirée ; elle reprend au tour suivant. */
+  effacee?: boolean
 }
 
 /**
@@ -136,6 +165,8 @@ declare module 'claude-code' {
       feuVert: boolean
       /** La tâche longue suivie par le module Progression, ou rien. */
       progression: Progression | null
+      /** Vrai quand un clic sous la barre de Progression a déplié le journal des actions. */
+      journalOuvert: boolean
     }
   }
 }

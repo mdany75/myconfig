@@ -56,10 +56,20 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   `hooks/reglages.ts`) ; son onglet n'a pas d'On/Off, seulement « Afficher ». Un mode retiré ne
   montre rien dans son cas (`bandeProgression`), le suivi continue.
 - Progression : les étapes viennent de TodoWrite, TaskCreate et TaskUpdate du fil principal
-  (`hooks/progression.ts`, logique reprise de fil) ; visible après `apparaitApres` secondes de travail
-  (0 par défaut ; une tâche finie avant ne s'affiche pas), puis `resteApres` secondes après la fin
-  (15 par défaut) ; choix dans `RESTES` de `hooks/reglages.ts`. Un même événement ne prend qu'un hook sans matcher : les hooks
+  (`hooks/progression.ts`, logique reprise de fil) ; visible dès le début, puis `disparaitApres`
+  secondes après la fin (15 par défaut ; `null` : jamais, jusqu'au clic sur le titre qui pose
+  `effacee`) ; choix dans `DISPARITIONS` de `hooks/reglages.ts`. Une interruption pose `effacee`,
+  que `demarrer` retire quand une liste inachevée reprend. `lireReglages` passe toujours par
+  `completer` : `$.state` garde après un rechargement des réglages d'une version plus ancienne. Un même événement ne prend qu'un hook sans matcher : les hooks
   `tool.call` de la Progression ont chacun un matcher `{ tool }`.
+- Progression, journal : chaque action du fil principal entre dans `p.journal` (`debuterAction`,
+  `JOURNAL_MAX` au plus) avec `decrireOutil` (nom, libellé, complément). Un clic sur le bouton
+  `progression-detail` (la ligne sous la barre ; un `Button` ne peut pas contenir le `Svg` de la
+  barre) bascule `journalOuvert` ; `journalDe` dessine les `journalLignes` dernières (réglage
+  « Détail » ; `null` : illimité), sans dépasser la place que la bande laisse (`e.props.maxRows`).
+- Progression, « Effacer du chat » (`masquerCommandes`) : des hooks `ui.render` sur `ToolUse` et
+  `ToolResult` rendent un `<Box />` vide pour Bash, sauf en erreur ou interrompu, et seulement si la
+  Progression est à On.
 - Progression sans liste : le hook `tool.call` sans matcher (partagé avec la garde de la
   Confirmation) note chaque action du fil principal (`debuterAction` / `finirAction`) ; les
   actions consécutives de même sorte forment un segment (`BLOCS_MAX` au plus). La piste se remplit

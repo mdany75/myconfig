@@ -56,17 +56,23 @@ export const DEFAUT: Reglages = {
   corriger: true,
   nombre: 3,
   disposition: 'ligne',
-  apparaitApres: 0,
-  resteApres: 15,
+  disparaitApres: 15,
+  journalLignes: 6,
+  masquerCommandes: false,
 }
 
 export const NOMBRE_MIN = 1
 export const NOMBRE_MAX = 5
 
-/** Les choix de « Apparaît après » et « Reste après » de la Progression, en secondes ; 0 : instantané. */
-export const RESTES = [0, 5, 10, 15, 20, 25, 30] as const
+/** Les choix de « Disparaît après » de la Progression, en secondes ; 0 : instantané, null : jamais. */
+export const DISPARITIONS = [0, 5, 10, 15, null] as const
 
-export const libelleReste = (s: number) => (s === 0 ? 'Instantané' : `${s} s`)
+export const libelleDisparition = (s: number | null) => (s === null ? 'Jamais' : s === 0 ? 'Instantané' : `${s} s`)
+
+/** Les choix du « Détail » : les actions que le journal déplié montre ; null : illimité. */
+export const LIGNES_JOURNAL = [6, 12, 18, null] as const
+
+export const libelleLignes = (n: number | null) => (n === null ? 'Illimité' : String(n))
 
 export function borner(n: number) {
   return Math.min(NOMBRE_MAX, Math.max(NOMBRE_MIN, Math.round(n)))
@@ -110,9 +116,25 @@ export function completer(valeur: unknown): Reglages {
     corriger,
     nombre: typeof v.nombre === 'number' && Number.isFinite(v.nombre) ? borner(v.nombre) : DEFAUT.nombre,
     disposition: v.disposition === 'ligne' || v.disposition === 'liste' ? v.disposition : DEFAUT.disposition,
-    apparaitApres: RESTES.some(s => s === v.apparaitApres) ? (v.apparaitApres as number) : DEFAUT.apparaitApres,
-    resteApres: RESTES.some(s => s === v.resteApres) ? (v.resteApres as number) : DEFAUT.resteApres,
+    disparaitApres: lireDisparition(v),
+    journalLignes:
+      'journalLignes' in v && LIGNES_JOURNAL.some(n => n === v.journalLignes)
+        ? (v.journalLignes as number | null)
+        : DEFAUT.journalLignes,
+    masquerCommandes: typeof v.masquerCommandes === 'boolean' ? v.masquerCommandes : DEFAUT.masquerCommandes,
   }
+}
+
+// Avant la 0.6.0, « Reste après » (`resteApres`) allait de 0 à 30 s : au-delà de 15 s, on garde 15.
+function lireDisparition(v: Record<string, unknown>): number | null {
+  if ('disparaitApres' in v && DISPARITIONS.some(s => s === v.disparaitApres)) {
+    return v.disparaitApres as number | null
+  }
+  const ancien = v.resteApres
+  if (typeof ancien === 'number' && Number.isFinite(ancien) && ancien >= 0) {
+    return DISPARITIONS.some(s => s === ancien) ? ancien : 15
+  }
+  return DEFAUT.disparaitApres
 }
 
 const sansAccents = (t: string) =>
@@ -185,9 +207,14 @@ export function resume(r: Reglages) {
       return `${base} · ${r.nombre} · ${libelleDisposition(r.disposition)}`
     }
     if (m === 'progression' && r.progression) {
-      const apparait = r.apparaitApres === 0 ? 'apparaît aussitôt' : `apparaît après ${r.apparaitApres} s`
-      const reste = r.resteApres === 0 ? 'ferme instantanément' : `reste ${r.resteApres} s`
-      return `${base} · ${modesAffiches(r)} · ${apparait} · ${reste}`
+      const disparait =
+        r.disparaitApres === null
+          ? 'reste jusqu’au clic'
+          : r.disparaitApres === 0
+            ? 'disparaît aussitôt'
+            : `disparaît après ${r.disparaitApres} s`
+      const detail = r.journalLignes === null ? 'détail illimité' : `détail ${r.journalLignes}`
+      return `${base} · ${modesAffiches(r)} · ${disparait} · ${detail}${r.masquerCommandes ? ' · commandes masquées' : ''}`
     }
     return m === 'correction' && r.correction ? `${base} · ${boutonsAffiches(r)}` : base
   }).join('\n')
@@ -202,8 +229,9 @@ export const USAGE = [
   '  /myconfig proposition ligne | liste   sur une ligne, ou une par ligne',
   '  /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction',
   '  /myconfig progression avec | sans on | off   affiche ou retire un mode de la Progression',
-  '  /myconfig progression apparait 0 à 30   secondes de travail avant que la barre apparaisse',
-  '  /myconfig progression reste 0 à 30      secondes où la barre reste après la fin (0 : instantané)',
+  '  /myconfig progression disparait 0 | 5 | 10 | 15 | jamais   secondes où la barre reste après la fin',
+  '  /myconfig progression detail 6 | 12 | 18 | illimite   actions montrées dans le journal déplié',
+  '  /myconfig progression masquer on | off   masque les commandes Bash dans le chat',
 ].join('\n')
 
 export type Changement = { reglages: Reglages; message: string } | { erreur: string }
@@ -274,32 +302,57 @@ export function appliquer(r: Reglages, args: string): Changement {
       }
     }
   }
-  // « /myconfig progression apparait 10 », « … reste 5 » ; un nombre seul règle « reste ».
+  // « /myconfig progression disparait 5 | jamais », « … detail 12 », « … masquer on » ;
+  // un nombre seul règle « Disparaît après ».
   if (module === 'progression') {
-    const [motCle = '', valeur = ''] = reste.length === 2 ? reste : ['reste', seul ?? '']
-    const cle = /^(apparait|apparition|delai)$/.test(sansAccents(motCle))
-      ? 'apparaitApres'
-      : /^(reste|restes|fin)$/.test(sansAccents(motCle))
-        ? 'resteApres'
-        : undefined
-    const secondes = /^(instantane|instantanement|aussitot|0)$/.test(sansAccents(valeur))
-      ? 0
-      : /^\d+$/.test(valeur)
-        ? Number(valeur)
-        : NaN
-    if (cle !== undefined && !Number.isNaN(secondes)) {
-      if (!RESTES.some(s => s === secondes)) {
-        return { erreur: `MyConfig : choisis ${RESTES.slice(1).join(', ')} secondes, ou 0 (instantané).` }
+    const [motCle = '', valeur = ''] = reste.length === 2 ? reste : ['disparait', seul ?? '']
+    const cle = sansAccents(motCle)
+    const v = sansAccents(valeur)
+    if (/^(disparait|disparition|reste|fin)$/.test(cle)) {
+      const secondes = /^jamais$/.test(v)
+        ? null
+        : /^(instantane|instantanement|aussitot)$/.test(v)
+          ? 0
+          : /^\d+$/.test(v)
+            ? Number(v)
+            : NaN
+      if (DISPARITIONS.some(s => s === secondes)) {
+        const message =
+          secondes === null
+            ? 'MyConfig : la Progression reste après la fin, jusqu’à un clic sur la barre.'
+            : secondes === 0
+              ? 'MyConfig : la Progression disparaît dès la fin.'
+              : `MyConfig : la Progression disparaît ${secondes} s après la fin.`
+        return { reglages: { ...r, disparaitApres: secondes }, message }
       }
-      const message =
-        cle === 'apparaitApres'
-          ? secondes === 0
-            ? 'MyConfig : la Progression apparaît aussitôt.'
-            : `MyConfig : la Progression apparaît après ${secondes} s de travail.`
-          : secondes === 0
-            ? 'MyConfig : la Progression ferme instantanément après la fin.'
-            : `MyConfig : la Progression reste ${secondes} s après la fin.`
-      return { reglages: { ...r, [cle]: secondes }, message }
+      if (!Number.isNaN(secondes)) {
+        return { erreur: 'MyConfig : choisis 0 (instantané), 5, 10 ou 15 secondes, ou « jamais ».' }
+      }
+    }
+    if (/^(detail|journal|actions)$/.test(cle)) {
+      const n = /^(illimite|tout|toutes|tous)$/.test(v) ? null : /^\d+$/.test(v) ? Number(v) : NaN
+      if (LIGNES_JOURNAL.some(x => x === n)) {
+        return {
+          reglages: { ...r, journalLignes: n },
+          message:
+            n === null
+              ? 'MyConfig : le journal déplié montre toutes les actions qui tiennent dans la bande.'
+              : `MyConfig : le journal déplié montre les ${n} dernières actions.`,
+        }
+      }
+      return { erreur: 'MyConfig : choisis 6, 12 ou 18 actions, ou « illimité ».' }
+    }
+    if (/^(masquer|commandes|cacher)$/.test(cle)) {
+      const masquer = lireEtat(valeur)
+      if (masquer === undefined) {
+        return { erreur: `MyConfig : ajoute « on » ou « off » après « ${motCle} ».` }
+      }
+      return {
+        reglages: { ...r, masquerCommandes: masquer },
+        message: masquer
+          ? 'MyConfig : les commandes Bash ne s’affichent plus dans le chat.'
+          : 'MyConfig : les commandes Bash s’affichent de nouveau dans le chat.',
+      }
     }
   }
   if (module === 'proposition') {

@@ -17,7 +17,7 @@ réunit les boutons et les chiffres ; un panneau à onglets règle chaque module
 | **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. | On / Off |
 | **Proposition** | cap | Des suites logiques après chaque réponse ; un clic en lance une. | On / Off, 1 à 5, sur une ligne ou une par ligne ; modèle de la session |
 | **Confirmation** | — | Claude résume ce qu'il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit. | On / Off |
-| **Progression** | fil | L'avancement du travail : une barre fine et un point par étape de la liste de tâches de Claude ; sans liste, une piste de temps des actions. | Afficher : Avec liste, Sans liste (aucun = Off) ; apparaît après et reste après : instantané, 5 à 30 s |
+| **Progression** | fil | L'avancement du travail : une barre fine et un point par étape de la liste de tâches de Claude ; sans liste, une piste de temps des actions. | Afficher : Avec liste, Sans liste (aucun = Off) ; disparaît après : instantané, 5 à 15 s, jamais ; détail : 6, 12, 18, illimité ; effacer du chat : On / Off |
 
 ### La bande
 
@@ -49,9 +49,11 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 - **Stats** : contexte, jetons et durée de la session.
 - **Confirmation** : l'état du dernier message (feu vert donné ou en attente).
 - **Progression** : pas d'On / Off, mais « Afficher » : « ☰ Avec liste » et « ▬ Sans liste », chacun
-  affiché ou non dans la bande ; aucun des deux, et la Progression est à Off. « Apparaît après »
-  (Instantané, 5 s… 30 s), le temps de travail avant que la barre apparaisse ; « Reste après » (Instantané, 5 s… 30 s), le temps où elle reste après la fin ;
-  « ▶ Avec liste » montre 20 secondes une tâche de 7 étapes, « ▶ Sans liste » rejoue la piste de
+  affiché ou non dans la bande ; aucun des deux, et la Progression est à Off. « Disparaît après »
+  (Instantané, 5 s, 10 s, 15 s, Jamais), le temps où la barre reste après la fin ; à « Jamais », elle
+  reste jusqu'à un clic sur son titre (✕). « Détail » (6, 12, 18, Illimité), le nombre d'actions que
+  le journal déplié montre. « Effacer du chat » (On / Off) : les commandes Bash et leur sortie ne
+  s'affichent plus dans la conversation ; une commande en erreur reste visible. « ▶ Avec liste » montre 20 secondes une tâche de 7 étapes, « ▶ Sans liste » rejoue la piste de
   temps d'une publication (8 actions).
 
 Au clavier, une fois le panneau sélectionné : `1` à `7` changent d'onglet, `o` et `f` mettent à On
@@ -64,8 +66,7 @@ Deux modes, chacun affiché ou non dans l'onglet Progression du panneau (« Affi
 retiré ne montre rien dans son cas, et l'autre ne prend pas sa place.
 
 **Avec liste de tâches** : dès que Claude tient une liste (TodoWrite, TaskCreate, TaskUpdate), un bloc apparaît
-en haut de la carte (variante 1, « barre fine et chapelet »), aussitôt ou après le délai choisi
-dans le panneau (« Apparaît après ») ; une tâche finie avant ce délai ne s'affiche pas :
+en haut de la carte (variante 1, « barre fine et chapelet ») :
 
 ```
 Migration des presets                                        50 % · ~4 min
@@ -77,8 +78,8 @@ Migration des presets                                        50 % · ~4 min
   le temps restant estimé au rythme des étapes déjà faites.
 - Le chapelet : ● étape faite, ◉ étape en cours, ○ étape restante.
 - Une tâche finie passe au vert avec « ✓ 7 étapes · durée » et reste le temps choisi dans le
-  panneau (« Reste après » : instantané, 5, 10, 15, 20, 25 ou 30 secondes ; 15 par défaut) ; une
-  tâche interrompue disparaît aussitôt ; une liste inachevée en fin de tour reste « En pause » et
+  panneau (« Disparaît après » : instantané, 5, 10 ou 15 secondes, 15 par défaut, ou jamais) ; un
+  clic sur son titre ou sur ✕ l'efface ; une tâche interrompue disparaît aussitôt ; une liste inachevée en fin de tour reste « En pause » et
   reprend au tour suivant.
 - Seul le fil principal compte : les listes des sous-agents sont ignorées.
 
@@ -100,6 +101,27 @@ Publie la version 0.3.0 de MyConfig                                ⏱ 1 min 12 
   l'action en cours.
 - Dès que Claude crée une liste de tâches, la barre des étapes prend le relais (si « Avec liste »
   est affiché).
+
+**Le détail, d'un clic** (croquis 1, « journal déplié ») : un clic sur la ligne sous la barre (les
+points et « ▾ ») déplie, dans la carte, les dernières actions de Claude (6, 12, 18 ou toutes celles
+qui tiennent dans la bande, au choix du panneau) ; un autre clic la replie. Dans le terminal, la
+barre elle-même est cliquable ; dans l'app de bureau, la barre est une image et c'est la ligne
+dessous qui prend le clic.
+
+```
+●  Bash ×3   ●  Lecture ×2   ●  Modif. ×1 ▴          En cours : Bash · Commit, push…
+──────────────────────────────────────────────────────────────────────────────────
++ 2 actions plus anciennes
+✓ ● Read        CHANGELOG.md  ~/Developer/Plugins/myconfig                   1 s
+✓ ● Edit        plugin.json  ~/Developer/Plugins/myconfig/.claude-plugin     2 s
+✓ ● Bash        Lance les tests  claude plugin test .                         5 s
+◉ ● Bash        Commit, push, tag  git commit -F - && git push origin main    3 s
+```
+
+- Chaque action : ✓ faite ou ◉ en cours, l'outil (point de la couleur de sa sorte), ce qu'il touche
+  (fichier, description de la commande, motif), le détail en gris (la commande, le dossier) et sa durée.
+- Le journal garde les 200 dernières actions de la tâche ; il marche aussi avec une liste de tâches,
+  sous le chapelet. Il reste déplié d'une tâche à l'autre, jusqu'au clic suivant.
 
 ### La Confirmation
 
@@ -125,8 +147,9 @@ consigne la retient.
 /myconfig proposition ligne | liste
 /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction
 /myconfig progression avec | sans on | off   affiche ou retire un mode de la Progression
-/myconfig progression apparait 0 à 30   secondes de travail avant que la barre apparaisse
-/myconfig progression reste 0 à 30      secondes où la barre reste après la fin
+/myconfig progression disparait 0 | 5 | 10 | 15 | jamais   secondes où la barre reste après la fin
+/myconfig progression detail 6 | 12 | 18 | illimite        actions du journal déplié
+/myconfig progression masquer on | off                     masque les commandes Bash dans le chat
 /relais [léger | dernier | purger [n]]
 /correction <texte> | corriger <texte> | retour
 ```

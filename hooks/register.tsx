@@ -30,13 +30,14 @@ import {
   chapelet,
   compter,
   debuterAction,
+  decrireOutil,
   demarrer,
   duree,
   exemple,
   EXEMPLE_MS,
   EXEMPLE_SANS_LISTE,
   finirAction,
-  libelleOutil,
+  lignesJournal,
   majEtape,
   NOMS_SORTES,
   pisteSvg,
@@ -49,6 +50,7 @@ import {
   suivre,
   TEINTES_SORTES,
   terminee,
+  titreAction,
   totalActions,
   VERT_FIN,
   visible,
@@ -67,8 +69,10 @@ import {
   NOMBRE_MAX,
   NOMBRE_MIN,
   NOMS,
-  RESTES,
-  libelleReste,
+  DISPARITIONS,
+  libelleDisparition,
+  libelleLignes,
+  LIGNES_JOURNAL,
   resume,
   USAGE,
 } from './reglages'
@@ -122,6 +126,7 @@ const correctionEnCours = { plugin: 'myconfig', key: 'correctionEnCours' } as co
 const etapeRelais = { plugin: 'myconfig', key: 'etapeRelais' } as const
 const feuVert = { plugin: 'myconfig', key: 'feuVert' } as const
 const progression = { plugin: 'myconfig', key: 'progression' } as const
+const journalOuvert = { plugin: 'myconfig', key: 'journalOuvert' } as const
 
 // Les réglages dans $.store, qui survit aux sessions et à « /clear ».
 const CLE_REGLAGES = 'reglages'
@@ -162,9 +167,10 @@ type Panneau = RenderInput<'Pane'>
 
 // $.state d'abord ; après un « /clear » il est vide, et $.store a gardé les réglages.
 async function lireReglages($: EngineInterface): Promise<Reglages> {
+  // Complétés à chaque lecture : $.state garde ceux d'une version plus ancienne après un rechargement.
   const { value } = await $.state.get(reglages)
   if (value !== undefined && value !== null) {
-    return value
+    return completer(value)
   }
   return completer(await $.store.get(CLE_REGLAGES))
 }
@@ -206,6 +212,29 @@ async function basculerLimites($: EngineInterface) {
   const { value: ouvert = false } = await $.state.get(limitesOuvertes)
   await $.state.set(limitesOuvertes, !ouvert)
 }
+
+// Un clic sous la barre de Progression déplie ou replie le journal des actions.
+async function basculerJournal($: EngineInterface) {
+  const { value: ouvert = false } = await $.state.get(journalOuvert)
+  await $.state.set(journalOuvert, !ouvert)
+}
+
+// Un clic sur la barre d'une tâche arrêtée l'efface (avec « Disparaît après : Jamais », seul moyen).
+async function effacerProgression($: EngineInterface) {
+  const { value: p = null } = await $.state.get(progression)
+  if (p !== null && (p.fin !== null || p.exemple)) {
+    await $.state.set(progression, { ...p, effacee: true })
+  }
+}
+
+// « Effacer du chat » ne vaut que si la Progression est à On : ailleurs, rien ne montrerait les commandes.
+async function commandesMasquees($: EngineInterface) {
+  const r = await lireReglages($)
+  return r.progression && r.masquerCommandes
+}
+
+// Le temps où la barre reste après la fin : Jamais, jusqu'au clic qui l'efface.
+const resteMs = (r: Reglages) => (r.disparaitApres === null ? Infinity : r.disparaitApres * 1000)
 
 // ── Progression ───────────────────────────────────────────────────────────────
 
@@ -293,8 +322,9 @@ async function montrerExempleSansListe($: EngineInterface) {
   let t = 0
   for (const [i, action] of EXEMPLE_SANS_LISTE.entries()) {
     const id = `exemple-${i}`
-    const sorte = sorteDe(action.outil)
-    $.clock.after(t, () => void changerExemple($, numero, (x, instant) => debuterAction(x, id, sorte, action.titre, instant)))
+    const sorte = sorteDe(action.nom)
+    const titre = titreAction(action)
+    $.clock.after(t, () => void changerExemple($, numero, (x, instant) => debuterAction(x, id, sorte, titre, instant, action)))
     t += action.ms
     $.clock.after(t, () => void changerExemple($, numero, (x, instant) => finirAction(x, id, instant)))
   }
@@ -304,8 +334,11 @@ async function montrerExempleSansListe($: EngineInterface) {
       arreterChrono()
     })()
   })
-  const { resteApres } = await lireReglages($)
-  $.clock.after(t + 50 + Math.max(3, resteApres) * 1000, () => {
+  const { disparaitApres } = await lireReglages($)
+  if (disparaitApres === null) {
+    return
+  }
+  $.clock.after(t + 50 + Math.max(3, disparaitApres) * 1000, () => {
     void (async () => {
       if (numero === exempleGeneration && (await $.state.get(progression)).value?.exemple === true) {
         await $.state.set(progression, null)
@@ -854,12 +887,54 @@ async function bandeRelais($: EngineInterface, e: Bande): Promise<RenderElement>
   )
 }
 
+// La ligne du titre ; une fois la tâche arrêtée, un clic dessus (ou sur ✕) efface la barre.
+function ligneTitre(
+  $: EngineInterface,
+  e: Bande,
+  titre: string,
+  droite: string,
+  fini: boolean,
+  droiteEnVert: boolean,
+  effacable: boolean,
+): RenderElement {
+  const { Box, Button, Text } = $.ui.resolve(e)
+  const gauche = (
+    <Text bold color={fini ? 'success' : undefined}>
+      {titre}
+    </Text>
+  )
+  const aDroite = (
+    <Text color={droiteEnVert ? 'success' : undefined} dimColor={!droiteEnVert}>
+      {droite}
+    </Text>
+  )
+  return (
+    <Box key="progression-titre" flexDirection="row" gap={1}>
+      {effacable ? (
+        <Button key="progression-effacer-titre" plain onPress={() => void effacerProgression($)}>
+          {gauche}
+        </Button>
+      ) : (
+        gauche
+      )}
+      <Box key="progression-espace" flexGrow={1} />
+      {effacable ? (
+        <Button key="progression-effacer" plain onPress={() => void effacerProgression($)}>
+          {[aDroite, <Text dimColor>{'  ✕'}</Text>]}
+        </Button>
+      ) : (
+        aDroite
+      )}
+    </Box>
+  )
+}
+
 // La Progression (variante 1, « barre fine et chapelet ») : titre et %, une barre fine sur toute
 // la largeur, puis un point par étape (● faite, ◉ en cours, ○ restante).
 // Le mode sans liste (croquis 3, « piste de temps ») : un segment par suite d'actions de même
 // sorte, aussi long qu'elles ont duré ; la piste se remplit de gauche à droite, 100 % à la fin.
-function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: number): RenderElement {
-  const { Box, Text } = $.ui.resolve(e)
+function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: number, ouvert: boolean): RenderElement {
+  const { Box, Button, Text } = $.ui.resolve(e)
   const fini = p.fin !== null
   const segments = segmentsPiste(p, p.fin ?? instant)
   const part = remplissagePiste(p, instant)
@@ -880,10 +955,12 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
     ))
     const vide = Math.max(0, largeur - parts.reduce((a, b) => a + b, 0))
     piste = (
-      <Text>
-        {morceaux}
-        <Text color="subtle">{'░'.repeat(vide)}</Text>
-      </Text>
+      <Button key="progression-piste-bouton" plain onPress={() => void (fini ? effacerProgression($) : basculerJournal($))}>
+        <Text>
+          {morceaux}
+          <Text color="subtle">{'░'.repeat(vide)}</Text>
+        </Text>
+      </Button>
     )
   } else {
     const { Svg } = $.ui.resolve(e)
@@ -912,18 +989,12 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
 
   return (
     <Box key="progression" flexDirection="column" width="100%">
-      <Box key="progression-titre" flexDirection="row" gap={1}>
-        <Text bold color={fini ? 'success' : undefined}>
-          {p.titre}
-        </Text>
-        <Box key="progression-espace" flexGrow={1} />
-        <Text color={fini ? 'success' : undefined} dimColor={!fini}>
-          {droite}
-        </Text>
-      </Box>
+      {ligneTitre($, e, p.titre, droite, fini, fini, fini)}
       <Box key="progression-piste">{piste}</Box>
       <Box key="progression-legende" flexDirection="row" gap={2}>
-        <Text>{legende}</Text>
+        <Button key="progression-detail" plain onPress={() => void basculerJournal($)}>
+          {[...legende, <Text dimColor>{ouvert ? ' ▴' : ' ▾'}</Text>]}
+        </Button>
         <Box key="progression-legende-espace" flexGrow={1} />
         {fini ? (
           <Text color="success">Toutes les actions sont faites · 100 %</Text>
@@ -935,7 +1006,63 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
   )
 }
 
-async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Promise<RenderElement | undefined> {
+// Le journal déplié d'un clic sous la barre (croquis 1) : les dernières actions, la plus récente
+// en bas ; ✓ faite, ◉ en cours (l'app de bureau dessine une image fixe : pas de roue qui tourne).
+function journalDe(
+  $: EngineInterface,
+  e: Bande,
+  p: Progression,
+  instant: number,
+  max: number,
+): { bloc: RenderElement; rangs: number } {
+  const { Box, Text } = $.ui.resolve(e)
+  const { lignes, plus } = lignesJournal(p, instant, max)
+  const largeur = Math.max(10, e.props.bodyColumns - 4)
+  const rangees: RenderElement[] = lignes.map((l, i) => (
+    <Box key={`journal-${i}`} flexDirection="row" gap={1} width="100%">
+      <Box key={`journal-${i}-etat`} width={1} flexShrink={0}>
+        <Text color={l.enCours ? TEINTES_SORTES[l.sorte] : 'success'}>{l.enCours ? '◉' : '✓'}</Text>
+      </Box>
+      <Box key={`journal-${i}-outil`} width={12} flexShrink={0}>
+        <Text wrap="truncate-end">
+          <Text color={TEINTES_SORTES[l.sorte]}>●</Text>
+          {` ${l.nom}`}
+        </Text>
+      </Box>
+      <Box key={`journal-${i}-quoi`} flexGrow={1} flexShrink={1}>
+        <Text wrap="truncate-end" bold={l.enCours}>
+          {l.libelle}
+          {l.complement === '' ? '' : <Text dimColor>{`${l.libelle === '' ? '' : '  '}${l.complement}`}</Text>}
+        </Text>
+      </Box>
+      <Box key={`journal-${i}-duree`} flexShrink={0}>
+        <Text dimColor={!l.enCours}>{duree(l.duree)}</Text>
+      </Box>
+    </Box>
+  ))
+  const autres = plus > 1 ? `+ ${plus} actions plus anciennes` : '+ 1 action plus ancienne'
+  return {
+    bloc: (
+      <Box key="progression-journal" flexDirection="column" width="100%">
+        <Text dimColor wrap="truncate-end">
+          {'─'.repeat(largeur)}
+        </Text>
+        {plus > 0 ? <Text dimColor>{autres}</Text> : null}
+        {rangees.length > 0 ? rangees : <Text dimColor>Aucune action pour l’instant.</Text>}
+      </Box>
+    ),
+    rangs: 1 + (plus > 0 ? 1 : 0) + Math.max(1, rangees.length),
+  }
+}
+
+// La Progression, et son nombre de rangées : la piste ou la barre de la liste, puis le journal s'il est déplié.
+// `place` : les rangées que le reste de la bande laisse ; le journal n'en prend pas plus.
+async function bandeProgression(
+  $: EngineInterface,
+  e: Bande,
+  r: Reglages,
+  place: number,
+): Promise<{ bloc: RenderElement; rangs: number } | undefined> {
   if (!r.progression) {
     return undefined
   }
@@ -943,18 +1070,35 @@ async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Prom
   // Lu pour être redessiné quand `maintenant` avance (fin de l'affichage, durée).
   await $.state.get(maintenant)
   const instant = await $.clock.now()
-  if (p === null || !visible(p, instant, r.resteApres * 1000, r.apparaitApres * 1000)) {
+  if (p === null || !visible(p, instant, resteMs(r))) {
     return undefined
   }
   // Sans liste de tâches : la piste de temps des actions. Chaque mode s'affiche seulement s'il est choisi.
-  if (p.etapes.length === 0) {
-    return r.sansListe ? bandePiste($, e, p, instant) : undefined
-  }
-  if (!r.avecListe) {
+  if (p.etapes.length === 0 ? !r.sansListe : !r.avecListe) {
     return undefined
   }
+  const { value: ouvert = false } = await $.state.get(journalOuvert)
+  const corps = p.etapes.length === 0 ? bandePiste($, e, p, instant, ouvert) : bandeListe($, e, p, instant, ouvert)
+  if (!ouvert) {
+    return { bloc: corps, rangs: 3 }
+  }
+  const { Box } = $.ui.resolve(e)
+  // Sous la barre (3 rangées), le trait et « + N plus anciennes » en prennent 2.
+  const journal = journalDe($, e, p, instant, Math.max(1, Math.min(r.journalLignes ?? Infinity, place - 5)))
+  return {
+    bloc: (
+      <Box key="progression-ouverte" flexDirection="column" width="100%">
+        {corps}
+        {journal.bloc}
+      </Box>
+    ),
+    rangs: 3 + journal.rangs,
+  }
+}
 
-  const { Box, Text } = $.ui.resolve(e)
+// Avec liste de tâches (variante 1) : la barre fine, le chapelet et l'étape en cours.
+function bandeListe($: EngineInterface, e: Bande, p: Progression, instant: number, ouvert: boolean): RenderElement {
+  const { Box, Button, Text } = $.ui.resolve(e)
   const { total, courante, rang } = compter(p)
   const fini = terminee(p)
   const pc = fini ? 100 : pourcentage(p)
@@ -974,10 +1118,16 @@ async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Prom
   if (e.surface === 'terminal') {
     const { plein, vide } = remplissage(pc, largeur)
     barreDessinee = (
-      <Text>
-        <Text color={teinte}>{'━'.repeat(plein)}</Text>
-        <Text color="subtle">{'━'.repeat(vide)}</Text>
-      </Text>
+      <Button
+        key="progression-barre-bouton"
+        plain
+        onPress={() => void (p.fin !== null ? effacerProgression($) : basculerJournal($))}
+      >
+        <Text>
+          <Text color={teinte}>{'━'.repeat(plein)}</Text>
+          <Text color="subtle">{'━'.repeat(vide)}</Text>
+        </Text>
+      </Button>
     )
   } else {
     const { Svg } = $.ui.resolve(e)
@@ -1007,17 +1157,12 @@ async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Prom
 
   return (
     <Box key="progression" flexDirection="column" width="100%">
-      <Box key="progression-titre" flexDirection="row" gap={1}>
-        <Text bold color={fini ? 'success' : undefined}>
-          {p.titre}
-        </Text>
-        <Box key="progression-espace" flexGrow={1} />
-        <Text dimColor>{droite}</Text>
-      </Box>
+      {ligneTitre($, e, p.titre, droite, fini, false, p.fin !== null)}
       <Box key="progression-barre">{barreDessinee}</Box>
-      <Box key="progression-points" flexDirection="row" gap={2}>
-        <Text>{morceaux}</Text>
-        <Text dimColor>{legende}</Text>
+      <Box key="progression-points" flexDirection="row">
+        <Button key="progression-detail" plain onPress={() => void basculerJournal($)}>
+          {[...morceaux, <Text>{'  '}</Text>, <Text dimColor>{legende}</Text>, <Text dimColor>{ouvert ? ' ▴' : ' ▾'}</Text>]}
+        </Button>
       </Box>
     </Box>
   )
@@ -1035,7 +1180,10 @@ async function bande($: EngineInterface, e: Bande, dessous: RenderElement, model
   const rangsSuite =
     limites !== undefined ? limites.rangs : suitesHaut === undefined ? 0 : r.disposition === 'liste' ? Math.max(1, r.nombre) : 1
   // La Progression d'une longue tâche passe tout en haut, une ligne vide la sépare de la suite.
-  const prog = await bandeProgression($, e, r)
+  // Les rangées hors Progression : la ligne des boutons, le cadre, l'espace, et la suite.
+  const autres = 4 + (suite === undefined ? 0 : rangsSuite + 1)
+  const progres = await bandeProgression($, e, r, e.props.maxRows - autres)
+  const prog = progres?.bloc
   const haut =
     prog === undefined ? suite : suite === undefined ? prog : (
       <Box key="haut-progression" flexDirection="column">
@@ -1044,7 +1192,7 @@ async function bande($: EngineInterface, e: Bande, dessous: RenderElement, model
         {suite}
       </Box>
     )
-  const rangsHaut = (prog === undefined ? 0 : 3) + (prog !== undefined && suite !== undefined ? 1 : 0) + rangsSuite
+  const rangsHaut = (progres?.rangs ?? 0) + (prog !== undefined && suite !== undefined ? 1 : 0) + rangsSuite
   const { value: vert = false } = await $.state.get(feuVert)
 
   const ligne = (
@@ -1110,7 +1258,7 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
   // Une rangée du contenu : son libellé à gauche, ses éléments à droite.
   const rangee = (cle: string, titre: string, ...enfants: RenderElement[]) => (
     <Box key={cle} flexDirection="row" gap={1} alignItems="center">
-      <Box key={`${cle}-libelle`} width={12} flexShrink={0}>
+      <Box key={`${cle}-libelle`} width={16} flexShrink={0}>
         <Text dimColor>{titre}</Text>
       </Box>
       {enfants}
@@ -1267,16 +1415,27 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
               choix('afficher-sans-liste', '▬ Sans liste', r.sansListe, x => avecModes(x, x.avecListe, !x.sansListe), 's'),
             )}
             {rangee(
-              'apparait',
-              'Apparaît après',
-              ...RESTES.map(s =>
-                choix(`apparait-${s}`, libelleReste(s), r.apparaitApres === s, x => ({ ...x, apparaitApres: s })),
+              'disparait',
+              'Disparaît après',
+              ...DISPARITIONS.map(s =>
+                choix(`disparait-${s ?? 'jamais'}`, libelleDisparition(s), r.disparaitApres === s, x => ({
+                  ...x,
+                  disparaitApres: s,
+                })),
               ),
             )}
             {rangee(
-              'reste',
-              'Reste après',
-              ...RESTES.map(s => choix(`reste-${s}`, libelleReste(s), r.resteApres === s, x => ({ ...x, resteApres: s }))),
+              'detail',
+              'Détail',
+              ...LIGNES_JOURNAL.map(n =>
+                choix(`detail-${n ?? 'illimite'}`, libelleLignes(n), r.journalLignes === n, x => ({ ...x, journalLignes: n })),
+              ),
+            )}
+            {rangee(
+              'masquer',
+              'Effacer du chat',
+              choix('masquer-on', 'On', r.masquerCommandes, x => ({ ...x, masquerCommandes: true })),
+              choix('masquer-off', 'Off', !r.masquerCommandes, x => ({ ...x, masquerCommandes: false })),
             )}
             {rangee(
               'exemple',
@@ -1304,12 +1463,18 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
             )}
             <Box key="infos-texte" flexDirection="column">
               <Text dimColor>Avec liste : les étapes de la liste de tâches de Claude (TodoWrite, TaskCreate).</Text>
-              <Text dimColor>Sans liste : une piste de temps, un segment par action (bleu commande, violet lecture,</Text>
-              <Text dimColor>vert modification), remplie de gauche à droite jusqu’à 100 % à la fin.</Text>
-              <Text dimColor>
-                {`La barre apparaît en haut de la bande ${r.apparaitApres === 0 ? 'dès que Claude travaille' : `après ${r.apparaitApres} s de travail`}, et ${r.resteApres === 0 ? 'se ferme dès la fin' : `reste ${r.resteApres} s après la fin`}.`}
-              </Text>
               <Text dimColor>Avec liste : ● faite · ◉ en cours · ○ restante</Text>
+              <Text dimColor>
+                {r.disparaitApres === null
+                  ? 'Une fois la tâche finie, la barre reste jusqu’à un clic sur son titre (✕).'
+                  : r.disparaitApres === 0
+                    ? 'La barre disparaît dès la fin de la tâche.'
+                    : `La barre disparaît ${r.disparaitApres} s après la fin ; un clic sur son titre (✕) l’efface plus tôt.`}
+              </Text>
+              <Text dimColor>
+                {`Un clic sur la ligne sous la barre (▾) déplie ${r.journalLignes === null ? 'toutes les actions de Claude qui tiennent dans la bande' : `les ${r.journalLignes} dernières actions de Claude`}.`}
+              </Text>
+              <Text dimColor>Effacer du chat : les commandes Bash et leur sortie ne s’y affichent plus ; une commande en erreur reste visible.</Text>
             </Box>
           </Box>
         )
@@ -1499,9 +1664,9 @@ export const register: Register = (on, options) => {
     }
     const id = e.tool_use_id
     const sorte = sorteDe(outil)
-    const titre = libelleOutil(outil, e as unknown as Record<string, unknown>)
+    const description = decrireOutil(outil, e as unknown as Record<string, unknown>)
     const debutAction = await $.clock.now()
-    await changerProgression($, p => debuterAction(p, id, sorte, titre, debutAction))
+    await changerProgression($, p => debuterAction(p, id, sorte, titreAction(description), debutAction, description))
     try {
       return await next(e)
     } finally {
@@ -1520,11 +1685,6 @@ export const register: Register = (on, options) => {
     const { value: avant = null } = await $.state.get(progression)
     await $.state.set(progression, demarrer(avant, e.text, instant))
     demarrerChrono($)
-    // Apparition différée : la bande se redessine quand le délai est écoulé.
-    const { apparaitApres } = await lireReglages($)
-    if (apparaitApres > 0) {
-      redessinerApres($, apparaitApres * 1000 + 200)
-    }
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -1583,12 +1743,12 @@ export const register: Register = (on, options) => {
       arreterChrono()
       const fin = await $.clock.now()
       if (e.reason === 'aborted' || e.reason === 'error') {
-        // Une heure plus tôt : plus longtemps que le plus long « Reste après ».
-        await changerProgression($, p => ({ ...p, fin: fin - 3_600_000 }))
+        // Une interruption la retire aussitôt ; une liste inachevée reprend au tour suivant.
+        await changerProgression($, p => ({ ...p, fin, effacee: true }))
       } else {
         await changerProgression($, p => ({ ...p, fin }))
-        if (r.resteApres > 0) {
-          redessinerApres($, r.resteApres * 1000 + 500)
+        if (r.disparaitApres !== null && r.disparaitApres > 0) {
+          redessinerApres($, r.disparaitApres * 1000 + 500)
         }
       }
     }
@@ -1598,6 +1758,24 @@ export const register: Register = (on, options) => {
     }
     return resultat
   }).catch(($, e, next) => next(e))
+
+  // Progression, « Effacer du chat » : les commandes Bash (la ligne et sa sortie) ne s'affichent plus,
+  // le journal de la barre les montre ; une commande en erreur ou interrompue reste visible.
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    if (e.props.tool !== 'Bash' || e.props.isErrored || e.props.isInterrupted || !(await commandesMasquees($))) {
+      return next(e)
+    }
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    if (e.props.tool !== 'Bash' || e.props.isErrored || !(await commandesMasquees($))) {
+      return next(e)
+    }
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const dessous = await next(e)

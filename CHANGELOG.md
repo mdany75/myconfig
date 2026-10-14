@@ -1,5 +1,32 @@
 # Changements
 
+## 0.6.0 — 2026-10-13
+
+### Ajouté
+- Progression : un clic sur la ligne sous la barre (les points et « ▾ ») déplie le journal des
+  dernières actions de Claude (croquis 1, « journal déplié ») ; un autre clic le replie. Chaque
+  action : ✓ faite ou ◉ en cours, l'outil, ce qu'il touche, le détail en gris (la commande, le
+  dossier) et sa durée ; « + N actions plus anciennes » au-dessus. Dans le terminal, la barre
+  elle-même est cliquable. Le journal marche avec et sans liste de tâches, et garde les
+  200 dernières actions.
+- Onglet Progression : « Détail » (6, 12, 18 ou Illimité), le nombre d'actions du journal déplié ;
+  Illimité montre toutes celles qui tiennent dans la bande. Aussi `/myconfig progression detail 12`.
+- Onglet Progression : « Effacer du chat » (On / Off) ; à On, les commandes Bash et leur sortie ne
+  s'affichent plus dans la conversation (le journal les montre) ; une commande en erreur ou
+  interrompue reste visible. Aussi `/myconfig progression masquer on`.
+- Une barre arrêtée s'efface d'un clic sur son titre ou sur ✕.
+- Les exemples « ▶ Avec liste » et « ▶ Sans liste » du panneau remplissent aussi le journal.
+
+### Modifié
+- « Reste après » devient « Disparaît après » : Instantané, 5, 10 ou 15 secondes, ou Jamais (la
+  barre reste alors jusqu'au clic sur son titre). Un ancien réglage de 20 à 30 s devient 15 s.
+  Aussi `/myconfig progression disparait jamais`.
+- Les libellés des rangées du panneau sont plus larges (« Disparaît après » tient sur une ligne).
+
+### Retiré
+- « Apparaît après » : la barre apparaît dès que Claude travaille.
+- Le texte de l'onglet Progression qui décrivait la piste sans liste.
+
 ## 0.5.0 — 2026-10-13
 
 ### Ajouté

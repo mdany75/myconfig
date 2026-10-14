@@ -10,8 +10,12 @@ import {
   chapelet,
   compter,
   debuterAction,
+  decrireOutil,
   demarrer,
   finirAction,
+  JOURNAL_MAX,
+  libelleOutil,
+  lignesJournal,
   majEtape,
   nouvelle,
   pourcentage,
@@ -222,31 +226,42 @@ describe('la Progression (fonctions pures)', () => {
     expect(majEtape(p, 'todo-6', { statut: 'deleted' }, 0).etapes).toHaveLength(6)
   })
 
-  test('« Reste après la fin » : instantané, ou 5 à 30 secondes', () => {
-    expect(DEFAUT.resteApres).toBe(15)
-    expect(completer({ resteApres: 7 }).resteApres).toBe(15)
+  test('« Disparaît après » : instantané, 5 à 15 secondes, ou jamais', () => {
+    expect(DEFAUT.disparaitApres).toBe(15)
+    expect(completer({ disparaitApres: 7 }).disparaitApres).toBe(15)
+    expect(completer({ disparaitApres: null }).disparaitApres).toBe(null)
+    // Un ancien « Reste après » est repris ; au-delà de 15 s, il devient 15 s.
+    expect(completer({ resteApres: 5 }).disparaitApres).toBe(5)
+    expect(completer({ resteApres: 30 }).disparaitApres).toBe(15)
     const cinq = appliquer(DEFAUT, 'progression 5')
-    expect('reglages' in cinq && cinq.reglages.resteApres).toBe(5)
-    const aussitot = appliquer(DEFAUT, 'progression instantané')
-    expect('reglages' in aussitot && aussitot.reglages.resteApres).toBe(0)
-    expect('erreur' in appliquer(DEFAUT, 'progression 7')).toBe(true)
-    const apparait = appliquer(DEFAUT, 'progression apparait 10')
-    expect('reglages' in apparait && [apparait.reglages.apparaitApres, apparait.reglages.resteApres]).toEqual([10, 15])
-    const reste = appliquer(DEFAUT, 'progression reste 30')
-    expect('reglages' in reste && reste.reglages.resteApres).toBe(30)
-    expect(DEFAUT.apparaitApres).toBe(0)
+    expect('reglages' in cinq && cinq.reglages.disparaitApres).toBe(5)
+    const aussitot = appliquer(DEFAUT, 'progression disparait instantané')
+    expect('reglages' in aussitot && aussitot.reglages.disparaitApres).toBe(0)
+    const jamais = appliquer(DEFAUT, 'progression disparait jamais')
+    expect('reglages' in jamais && jamais.reglages.disparaitApres).toBe(null)
+    expect('erreur' in appliquer(DEFAUT, 'progression 30')).toBe(true)
     const p = appliquerTodos(nouvelle('x', 0), TODOS, 0)
     expect(visible({ ...p, fin: 1000 }, 1000, 0)).toBe(false)
     expect(visible({ ...p, fin: 1000 }, 5999, 5000)).toBe(true)
     expect(visible({ ...p, fin: 1000 }, 6000, 5000)).toBe(false)
+    expect(visible({ ...p, fin: 1000 }, 1e12, Infinity)).toBe(true)
+    expect(visible({ ...p, fin: 1000, effacee: true }, 1000, Infinity)).toBe(false)
+    // Une liste effacée en cours de route reprend au tour suivant.
+    expect(demarrer({ ...p, fin: 1000, effacee: true }, 'continue', 2000).effacee).toBe(false)
   })
 
-  test('« Apparaît après » : rien avant le délai, et rien pour une tâche finie avant', () => {
-    const p = appliquerTodos(nouvelle('x', 0), TODOS, 0)
-    expect(visible(p, 9_999, 15_000, 10_000)).toBe(false)
-    expect(visible(p, 10_000, 15_000, 10_000)).toBe(true)
-    expect(visible({ ...p, fin: 5_000 }, 6_000, 15_000, 10_000)).toBe(false)
-    expect(visible({ ...p, fin: 12_000 }, 13_000, 15_000, 10_000)).toBe(true)
+  test('« Détail » et « Effacer du chat »', () => {
+    expect([DEFAUT.journalLignes, DEFAUT.masquerCommandes]).toEqual([6, false])
+    expect(completer({ journalLignes: 7 }).journalLignes).toBe(6)
+    expect(completer({ journalLignes: null }).journalLignes).toBe(null)
+    const douze = appliquer(DEFAUT, 'progression detail 12')
+    expect('reglages' in douze && douze.reglages.journalLignes).toBe(12)
+    const tout = appliquer(DEFAUT, 'progression détail illimité')
+    expect('reglages' in tout && tout.reglages.journalLignes).toBe(null)
+    expect('erreur' in appliquer(DEFAUT, 'progression detail 7')).toBe(true)
+    const masquer = appliquer(DEFAUT, 'progression masquer on')
+    expect('reglages' in masquer && masquer.reglages.masquerCommandes).toBe(true)
+    expect('erreur' in appliquer(DEFAUT, 'progression masquer')).toBe(true)
   })
 
   test('visible pendant la tâche, puis 15 secondes après sa fin', () => {
@@ -319,21 +334,24 @@ describe('la Progression dans la bande', () => {
   }
 })
 
-describe('la Progression : reste après la fin', () => {
+describe('la Progression : disparaît après', () => {
   for (const surface of SURFACES) {
     test(`le panneau règle le temps ; instantané ferme dès la fin, 5 s reste 5 s (${surface})`, async ($, on) => {
       const horloge = simuler(on)
       simulerTours(on)
       const pane = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
       await pane.press({ key: 'onglet-progression' })
-      expect(await pane.find({ type: 'Text', text: 'Reste après' })).toBeDefined()
-      for (const sec of [0, 5, 10, 15, 20, 25, 30]) {
-        expect(await pane.find({ type: 'Button', key: `reste-${sec}` })).toBeDefined()
+      expect(await pane.find({ type: 'Text', text: 'Disparaît après' })).toBeDefined()
+      expect(await pane.find({ type: 'Text', text: 'Apparaît après' })).toBeUndefined()
+      for (const cle of ['0', '5', '10', '15', 'jamais']) {
+        expect(await pane.find({ type: 'Button', key: `disparait-${cle}` })).toBeDefined()
       }
-      expect((await pane.find({ type: 'Button', key: 'reste-0' }))?.props.label).toBe('Instantané')
+      expect((await pane.find({ type: 'Button', key: 'disparait-0' }))?.props.label).toBe('Instantané')
+      expect((await pane.find({ type: 'Button', key: 'disparait-jamais' }))?.props.label).toBe('Jamais')
+      expect(await pane.find({ type: 'Text', text: /remplie de gauche à droite/ })).toBeUndefined()
 
-      await pane.press({ key: 'reste-0' })
-      expect(await etat($)).toContain('Progression  : On · avec liste, sans liste · apparaît aussitôt · ferme instantanément')
+      await pane.press({ key: 'disparait-0' })
+      expect(await etat($)).toContain('Progression  : On · avec liste, sans liste · disparaît aussitôt · détail 6')
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
       await $.turn.start({ text: 'Migration', turnId: 't1' })
       await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
@@ -341,8 +359,8 @@ describe('la Progression : reste après la fin', () => {
       await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't1' })
       expect(await ui.find({ key: 'progression' })).toBeUndefined()
 
-      await pane.press({ key: 'reste-5' })
-      expect(await etat($)).toContain('Progression  : On · avec liste, sans liste · apparaît aussitôt · reste 5 s')
+      await pane.press({ key: 'disparait-5' })
+      expect(await etat($)).toContain('Progression  : On · avec liste, sans liste · disparaît après 5 s')
       await $.turn.start({ text: 'Autre tâche', turnId: 't2' })
       await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u2', todos: TODOS })
       await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't2' })
@@ -353,42 +371,89 @@ describe('la Progression : reste après la fin', () => {
       await ui.unmount()
       await pane.unmount()
     })
+
+    test(`Jamais : la barre reste après la fin, jusqu’au clic sur son titre (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      simulerTours(on)
+      await myconfig($, 'progression disparait jamais')
+      expect(await etat($)).toContain('reste jusqu’au clic')
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      await $.turn.start({ text: 'Publie', turnId: 't1' })
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/x/a.md' })
+      // Pendant la tâche, le titre n'efface rien.
+      expect(await ui.find({ key: 'progression-effacer' })).toBeUndefined()
+      await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't1' })
+      await horloge.advance(10 * 60_000)
+      expect(await ui.find({ key: 'progression-piste' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '  ✕' })).toBeDefined()
+
+      await ui.press({ key: 'progression-effacer' })
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+
+      // Une interruption la retire aussitôt, même à « Jamais ».
+      await $.turn.start({ text: 'Autre', turnId: 't2' })
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r2', file_path: '/x/b.md' })
+      expect(await ui.find({ key: 'progression' })).toBeDefined()
+      await $.turn.complete({ reason: 'aborted', answer: '', durationMs: 0, isAborted: true, turnId: 't2' })
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+      await ui.unmount()
+    })
   }
 })
 
-describe('la Progression : apparaît après', () => {
+describe('la Progression : effacer les commandes du chat', () => {
   for (const surface of SURFACES) {
-    test(`le panneau règle le délai ; la barre attend 10 s de travail (${surface})`, async ($, on) => {
-      const horloge = simuler(on)
-      simulerTours(on)
+    test(`à On, une commande Bash ne s’affiche plus ; en erreur, si (${surface})`, async ($, on) => {
+      simuler(on)
+      // Sous le mod, le moteur dessine sa propre ligne d'outil.
+      on('ui.render', { component: 'ToolUse' }, () => ({ type: 'engine' as const, ref: 0 }))
+      const ligne = (tool: string, isErrored = false) => ({
+        plugin: 'myconfig',
+        surface,
+        component: 'ToolUse' as const,
+        props: { tool_use_id: 'b1', tool, input: { command: 'ls' }, isRunning: false, isErrored, isInterrupted: false },
+      })
+      const avant = await $.ui.mount(ligne('Bash'))
+      expect((await avant.drawn())?.type).not.toBe('Box')
+      await avant.unmount()
+
       const pane = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
       await pane.press({ key: 'onglet-progression' })
-      expect(await pane.find({ type: 'Text', text: 'Apparaît après' })).toBeDefined()
-      for (const sec of [0, 5, 10, 15, 20, 25, 30]) {
-        expect(await pane.find({ type: 'Button', key: `apparait-${sec}` })).toBeDefined()
+      await pane.press({ key: 'masquer-on' })
+      expect(await etat($)).toContain('commandes masquées')
+      const bash = await $.ui.mount(ligne('Bash'))
+      expect((await bash.drawn())?.type).toBe('Box')
+      const erreur = await $.ui.mount(ligne('Bash', true))
+      expect((await erreur.drawn())?.type).not.toBe('Box')
+      const lecture = await $.ui.mount(ligne('Read'))
+      expect((await lecture.drawn())?.type).not.toBe('Box')
+
+      // Progression à Off : rien ne montrerait les commandes, elles s'affichent de nouveau.
+      await myconfig($, 'progression off')
+      const sansProgression = await $.ui.mount(ligne('Bash'))
+      expect((await sansProgression.drawn())?.type).not.toBe('Box')
+      for (const m of [bash, erreur, lecture, sansProgression, pane]) {
+        await m.unmount()
       }
-      await pane.press({ key: 'apparait-10' })
-      expect(await etat($)).toContain('Progression  : On · avec liste, sans liste · apparaît après 10 s · reste 15 s')
+    })
 
-      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
-      await $.turn.start({ text: 'Migration', turnId: 't1' })
-      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
-      await horloge.advance(9_000)
-      expect(await ui.find({ key: 'progression' })).toBeUndefined()
-      await horloge.advance(1_500)
-      expect(await ui.find({ key: 'progression' })).toBeDefined()
-
-      // Une tâche finie avant le délai ne s'affiche jamais.
-      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u2', todos: TODOS.map(t => ({ ...t, status: 'completed' as const })) })
-      await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't1' })
-      await horloge.advance(16_000)
-      await $.turn.start({ text: 'Vite fait', turnId: 't2' })
-      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u3', todos: TODOS.map(t => ({ ...t, status: 'completed' as const })) })
-      await horloge.advance(3_000)
-      await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't2' })
-      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+    test(`« Détail » règle le nombre d’actions du journal déplié (${surface})`, async ($, on) => {
+      simuler(on)
+      simulerTours(on)
+      const grande = { ...bande, props: { ...bande.props, maxRows: 40 } }
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...grande })
+      await $.turn.start({ text: 'Lis tout', turnId: 't1' })
+      for (let i = 0; i < 20; i++) {
+        await $.tool.call({ tool: 'Read', tool_use_id: `r${i}`, file_path: `/x/f${i}.md` })
+      }
+      await ui.press({ key: 'progression-detail' })
+      expect(await ui.find({ type: 'Text', text: '+ 14 actions plus anciennes' })).toBeDefined()
+      await myconfig($, 'progression detail 12')
+      expect(await ui.find({ type: 'Text', text: '+ 8 actions plus anciennes' })).toBeDefined()
+      await myconfig($, 'progression detail illimite')
+      expect(await ui.find({ type: 'Text', text: /plus anciennes?$/ })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: /^f0\.md/ })).toBeDefined()
       await ui.unmount()
-      await pane.unmount()
     })
   }
 })
@@ -423,6 +488,40 @@ describe('la Progression sans liste (fonctions pures)', () => {
     expect(remplissagePiste({ ...p, fin: 20_000 }, 20_000)).toBe(1)
     expect(repartir([2, 7], 30)).toEqual([7, 23])
     expect(repartir([1, 1, 1], 10).reduce((a, b) => a + b, 0)).toBe(10)
+  })
+
+  test('l’outil en clair : son nom, ce qu’il touche, le détail', () => {
+    const bash = { command: 'claude plugin test .\nautre ligne', description: 'Lance les tests' }
+    expect(decrireOutil('Bash', bash)).toEqual({ nom: 'Bash', libelle: 'Lance les tests', complement: 'claude plugin test .' })
+    expect(decrireOutil('Bash', { command: 'ls -la' })).toEqual({ nom: 'Bash', libelle: 'ls -la', complement: '' })
+    expect(decrireOutil('Read', { file_path: '/Users/dany/Developer/x/README.md' })).toEqual({
+      nom: 'Read',
+      libelle: 'README.md',
+      complement: '~/Developer/x',
+    })
+    expect(decrireOutil('mcp__github__create_issue', {}).nom).toBe('github · create_issue')
+    expect(libelleOutil('Bash', bash)).toBe('Bash · Lance les tests')
+  })
+
+  test('le journal : les dernières actions, leur durée, celle en cours', () => {
+    const lire = { nom: 'Read', libelle: 'README.md', complement: '~/x' }
+    let p = nouvelle('Publie', 0)
+    p = debuterAction(p, 'a', 'lecture', 'Read · README.md', 0, lire)
+    p = finirAction(p, 'a', 2_000)
+    p = debuterAction(p, 'b', 'bash', 'Bash · Teste', 2_000)
+    const { lignes, plus } = lignesJournal(p, 9_000)
+    expect(plus).toBe(0)
+    expect(lignes.map(l => [l.nom, l.libelle, l.duree, l.enCours])).toEqual([
+      ['Read', 'README.md', 2_000, false],
+      ['Bash · Teste', '', 7_000, true],
+    ])
+    // Une action restée ouverte à la fin de la tâche compte jusqu'à cette fin, et n'est plus en cours.
+    expect(lignesJournal({ ...p, fin: 4_000 }, 9_000).lignes[1]).toMatchObject({ duree: 2_000, enCours: false })
+    for (let i = 0; i < JOURNAL_MAX + 5; i++) {
+      p = finirAction(debuterAction(p, `x${i}`, 'bash', 'Bash', 10_000), `x${i}`, 11_000)
+    }
+    expect(p.journal).toHaveLength(JOURNAL_MAX)
+    expect(lignesJournal(p, 12_000)).toMatchObject({ plus: JOURNAL_MAX - 6 })
   })
 })
 
@@ -482,6 +581,39 @@ describe('la Progression sans liste dans la bande', () => {
       await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
       expect(await ui.find({ key: 'progression-piste' })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: 'Étape 4 sur 7 · Valider' })).toBeDefined()
+      await ui.unmount()
+    })
+
+    test(`un clic sous la piste déplie le journal des actions, un autre le replie (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+      on('tool.call', async (_$, e) => {
+        await horloge.advance(e.tool === 'Bash' ? 4_000 : 1_000)
+        return { result: {}, text: 'ok' }
+      })
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      await $.turn.start({ text: 'Publie la version', turnId: 't1' })
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/Users/dany/Developer/x/README.md' })
+      await $.tool.call({ tool: 'Bash', tool_use_id: 'b1', command: 'claude plugin test .', description: 'Lance les tests' })
+      expect(await ui.find({ key: 'progression-journal' })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: ' ▾' })).toBeDefined()
+
+      await ui.press({ key: 'progression-detail' })
+      expect(await ui.find({ key: 'progression-journal' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: ' ▴' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '  ~/Developer/x' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '  claude plugin test .' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '1 s' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '4 s' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '✓' })).toBeDefined()
+
+      // Le journal reste déplié pour une liste de tâches, sous le chapelet.
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
+      expect(await ui.find({ type: 'Text', text: 'Étape 4 sur 7 · Valider' })).toBeDefined()
+      expect(await ui.find({ key: 'progression-journal' })).toBeDefined()
+
+      await ui.press({ key: 'progression-detail' })
+      expect(await ui.find({ key: 'progression-journal' })).toBeUndefined()
       await ui.unmount()
     })
 
