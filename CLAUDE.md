@@ -1,8 +1,8 @@
 # CLAUDE.md — myconfig
 
-Mod Claude Code qui réunit jauge, fil-son, relais, plume et cap en six modules réglables
-(Son, Relais, Correction, Stats, Proposition, Confirmation), avec une bande au-dessus du champ
-de saisie et un panneau de réglages à onglets.
+Mod Claude Code qui réunit jauge, fil-son, relais, plume et cap, avec une bande au-dessus du champ
+de saisie et un panneau de réglages à six onglets (Son, Correction, Stats, Proposition,
+Confirmation, Progression). Le Relais n'a pas d'onglet : son bouton vit dans l'onglet Stats.
 
 Ce projet suit le standard commun des projets de Dany (`/standard-projet` le vérifie).
 Une exception voulue : il vit dans `~/Developer/Plugins/myconfig`, pas directement dans
@@ -49,7 +49,18 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   rouge à 80 % et plus ; barres des limites en bleu, comme dans l'app.
 - Confirmation : le feu vert est reconnu par `estFeuVert` (`hooks/confirmation.ts`) ; sans
   lui, Write, Edit et NotebookEdit sont refusés. Une panne du hook laisse passer (garde-fou
-  de confort, pas de sécurité).
+  de confort, pas de sécurité). Dans la bande, le bouton `confirmation` (choix de Dany, Bande 1) :
+  « ⏸ » `primary` à On, « ▶ » `secondary` à Off ; `basculerConfirmation` remet `feuVert` à false
+  quand il la remet à On.
+- Relais (0.8.0) : plus un module (absent de `MODULES`, de `Reglages` et de la bande) ; son bouton
+  `relais` est dans l'onglet Stats (`boutonRelais`), deux clics, grisé tant que `auTravail` (posé par
+  `turn.start`, retiré par `turn.complete` du fil principal). `/myconfig relais …` répond
+  `RELAIS_TOUJOURS`. Un onglet `relais` gardé dans `$.state` revient aux Stats.
+- Onglet Stats (choix de Dany, croquis C, `ongletStats`) : « Cette session », « Forfait », « Relais ».
+  Le contenu du contexte vient de `$.session.usage({ breakdown: 'summary' })` (`mesurerRepartition`,
+  estimation locale, rien n'est envoyé) et va dans `repartition` : relu à l'ouverture du panneau sur
+  cet onglet, au clic sur l'onglet, et à chaque `session.measure` qui change le contexte quand
+  l'onglet est choisi. Le coût vient de `cost.usd` (`Mesure.cout`).
 - Correction : `correction` vaut toujours `ameliorer || corriger` (`avecBoutons` dans
   `hooks/reglages.ts`) ; son onglet n'a pas d'On/Off, seulement « Afficher ».
 - Progression : `progression` vaut toujours `avecListe || sansListe` (`avecModes` dans
@@ -67,6 +78,9 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   `progression-detail` (la ligne sous la barre ; un `Button` ne peut pas contenir le `Svg` de la
   barre) bascule `journalOuvert` ; `journalDe` dessine les `journalLignes` dernières (réglage
   « Détail » ; `null` : illimité), sans dépasser la place que la bande laisse (`e.props.maxRows`).
+  Journal 1 (choix de Dany) : l'outil, puis le titre entier (`titreJournal`, sans le complément en
+  gris), coupé sur plusieurs rangées (`wrap="wrap"`) ; `pageJournal` prend la plus grande page dont
+  les titres tiennent dans les rangées (`rangeesTexte`), et sa `taille` sert de pas à ▲ et ▼.
   Plus d'actions que de place : « ▲ » (`journal-haut`, à la place du trait) et « ▼ » (`journal-bas`)
   feuillettent par pages ; `journalAncre` garde l'id de la première action montrée (`null` : les
   dernières), remis à `null` quand le journal se replie ou se rouvre.

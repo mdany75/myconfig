@@ -379,6 +379,57 @@ export function lignesJournal(p: Progression, maintenant: number, max = JOURNAL_
   return { lignes, avant: debut, apres: journal.length - debut - montrees.length, debut, total: journal.length }
 }
 
+/** Le titre d'une action dans le journal : ce qu'elle touche, ou son détail quand il n'y a rien d'autre. */
+export const titreJournal = (l: DescriptionAction) => (l.libelle !== '' ? l.libelle : l.complement)
+
+/**
+ * Les rangées qu'un texte prend sur `colonnes` colonnes, coupé aux espaces comme le moteur coupe
+ * un texte (`wrap`) ; un mot plus long que la rangée est coupé. Au moins une rangée.
+ */
+export function rangeesTexte(texte: string, colonnes: number): number {
+  const largeur = Math.max(1, colonnes)
+  let rangees = 1
+  let courante = 0
+  for (const mot of texte.split(/\s+/).filter(m => m !== '')) {
+    const n = [...mot].length
+    const avecEspace = courante === 0 ? n : courante + 1 + n
+    if (avecEspace <= largeur) {
+      courante = avecEspace
+      continue
+    }
+    if (courante > 0) {
+      rangees++
+    }
+    rangees += Math.floor((n - 1) / largeur)
+    courante = ((n - 1) % largeur) + 1
+  }
+  return rangees
+}
+
+/**
+ * Journal 1 : chaque titre en entier, sur plusieurs rangées au besoin. La plus grande page d'au
+ * plus `max` actions dont les titres tiennent dans `rangees` rangées (au moins une action) ;
+ * `colonnes` : la place du titre avant la durée. `taille` sert de pas à ▲ et ▼.
+ */
+export function pageJournal(
+  p: Progression,
+  maintenant: number,
+  max: number,
+  rangees: number,
+  colonnes: number,
+  ancre: string | null = null,
+) {
+  const hauteurDe = (l: LigneJournal) => rangeesTexte(titreJournal(l), colonnes - 1 - duree(l.duree).length)
+  for (let taille = Math.max(1, Math.min(max, rangees, JOURNAL_MAX)); ; taille--) {
+    const page = lignesJournal(p, maintenant, taille, ancre)
+    const hauteurs = page.lignes.map(hauteurDe)
+    const hauteur = hauteurs.reduce((t, h) => t + h, 0)
+    if (hauteur <= rangees || taille === 1) {
+      return { ...page, taille, hauteurs, hauteur }
+    }
+  }
+}
+
 /** ▲ : l'ancre de la page d'avant. */
 export function ancrePrecedente(journal: readonly ActionJournal[], max: number, ancre: string | null) {
   return journal[Math.max(0, debutFenetre(journal, max, ancre) - max)]?.id ?? null

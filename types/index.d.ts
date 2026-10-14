@@ -1,5 +1,8 @@
-/** Les six modules de MyConfig, dans l'ordre des onglets du panneau. */
-export type Module = 'son' | 'relais' | 'correction' | 'stats' | 'proposition' | 'confirmation' | 'progression'
+/**
+ * Les six modules de MyConfig, dans l'ordre des onglets du panneau. Le Relais n'en est plus un
+ * depuis la 0.8.0 : son bouton vit dans l'onglet Stats, toujours disponible.
+ */
+export type Module = 'son' | 'correction' | 'stats' | 'proposition' | 'confirmation' | 'progression'
 
 /** Les propositions côte à côte (`ligne`) ou une par ligne (`liste`). */
 export type Disposition = 'ligne' | 'liste'
@@ -7,7 +10,6 @@ export type Disposition = 'ligne' | 'liste'
 /** Les réglages de MyConfig, gardés d'une session à l'autre dans `$.store`. */
 export type Reglages = {
   son: boolean
-  relais: boolean
   /** Toujours `ameliorer || corriger` : la Correction est à Off quand aucun bouton n'est affiché. */
   correction: boolean
   stats: boolean
@@ -57,6 +59,19 @@ export type Mesure = {
   contexte: number | null
   /** Les limites d'utilisation du forfait ; vide hors abonnement ou avant la première réponse. */
   limites: Limite[]
+  /** Ce que la session a coûté, en dollars américains au prix de l'API ; rien si le moteur ne le compte pas. */
+  cout: number | null
+}
+
+/** Une part du contexte, comme « /context » la compte (estimation locale). */
+export type PartContexte = {
+  /** Le nom en clair : « Système », « Messages », « Libre »… */
+  nom: string
+  jetons: number
+  /** Sa teinte, en hexadécimal ; le libre prend celle du rail. */
+  teinte: string
+  /** `used` : occupé ; `free` : libre ; `buffer` : la réserve du compactage. */
+  sorte: 'used' | 'free' | 'buffer'
 }
 
 /** Une étape de la liste de tâches de Claude, avec ses heures (millisecondes). */
@@ -143,6 +158,10 @@ declare module 'claude-code' {
       onglet: Module
       /** La dernière mesure, ou rien avant la première. */
       mesure: Mesure | null
+      /** Le contexte par part, pour l'onglet Stats ; rien avant la première lecture. */
+      repartition: PartContexte[] | null
+      /** Vrai de `turn.start` à `turn.complete` : le bouton Relais du panneau attend la fin du tour. */
+      auTravail: boolean
       /** Vrai quand un clic sur les Stats a ouvert la vue des limites d'utilisation. */
       limitesOuvertes: boolean
       /** L'heure de la dernière mise à jour de la durée, en millisecondes. */

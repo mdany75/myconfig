@@ -1,5 +1,37 @@
 # Changements
 
+## 0.8.0 — 2026-10-14
+
+### Ajouté
+- Bande : un bouton Confirmation à la place du Relais (Bande 1) : « ⏸ » foncé quand la
+  Confirmation est à On, « ▶ » normal à Off ; un clic bascule. Remise à On, elle attend un
+  nouveau feu vert.
+- Onglet Stats du panneau (croquis C), en trois groupes : « Cette session » (contexte en % et en
+  jetons, une barre de son contenu par part avec la légende, durée et coût en $ US au prix de
+  l'API), « Forfait » (limite de 5 heures et de la semaine, chacune avec sa barre, son % et sa
+  remise à zéro, comme `/usage`) et « Relais ». Le contenu du contexte est l'estimation locale de
+  `/context` : rien n'est envoyé au modèle.
+
+### Modifié
+- Le bouton Relais passe de la bande à l'onglet Stats du panneau, pour éviter un clic par erreur.
+  Il garde ses deux clics (« Confirmer ? » pendant 6 secondes) et attend la fin du tour quand
+  Claude travaille.
+- Progression, journal déplié (Journal 1) : chaque action montre l'outil, puis son titre en
+  entier, sur plusieurs lignes au besoin ; le détail en gris (la commande, le dossier) n'est plus
+  affiché. La page se raccourcit quand de longs titres prennent plus de rangées.
+
+### Corrigé
+- Progression, dans l'app de bureau : la piste et la barre de la liste vont jusqu'au bout de la
+  carte ; elles s'arrêtaient vers 87 % de sa largeur.
+- Progression : le chevron qui déplie le journal passe à « ▼ / ▲ », pleine taille ; « ▾ / ▴ »
+  étaient minuscules dans l'app de bureau.
+
+### Retiré
+- L'onglet Relais du panneau (6 onglets, touches 1 à 6) et l'On / Off du Relais : son bouton et
+  `/relais` marchent toujours. `/myconfig relais on | off` explique où il est passé.
+- L'indicateur « ⏸ Confirmation / ▶ Feu vert » de la bande : l'onglet Confirmation montre
+  toujours l'état du dernier message.
+
 ## 0.7.0 — 2026-10-13
 
 ### Ajouté

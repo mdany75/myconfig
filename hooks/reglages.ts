@@ -4,7 +4,6 @@ import type { Disposition, Module, Reglages } from '../types'
 
 export const MODULES: readonly Module[] = [
   'son',
-  'relais',
   'correction',
   'stats',
   'proposition',
@@ -14,7 +13,6 @@ export const MODULES: readonly Module[] = [
 
 export const NOMS: Record<Module, string> = {
   son: 'Son',
-  relais: 'Relais',
   correction: 'Correction',
   stats: 'Stats',
   proposition: 'Proposition',
@@ -24,7 +22,6 @@ export const NOMS: Record<Module, string> = {
 
 export const ICONES: Record<Module, string> = {
   son: '♪',
-  relais: '⇄',
   correction: '✎',
   stats: '◔',
   proposition: '✦',
@@ -34,9 +31,8 @@ export const ICONES: Record<Module, string> = {
 
 export const DESCRIPTIONS: Record<Module, string> = {
   son: 'Joue un son quand une tâche d’au moins 10 secondes se termine.',
-  relais: 'Écrit un récapitulatif dans .relais/, efface la conversation et prépare le message de reprise.',
   correction: 'Améliore ta consigne en un prompt structuré, ou corrige seulement le texte, avant l’envoi.',
-  stats: 'Montre à droite de la bande le contexte utilisé, en % et en jetons, et la durée de la session.',
+  stats: 'Le contexte utilisé à droite de la bande ; ici, son contenu, le forfait et le Relais.',
   proposition: 'Propose des suites logiques après chaque réponse : un clic en lance une.',
   confirmation: 'Claude résume ce qu’il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit.',
   progression: 'L’avancement du travail : les étapes de la liste de tâches de Claude, ou une piste de temps de ses actions.',
@@ -44,7 +40,6 @@ export const DESCRIPTIONS: Record<Module, string> = {
 
 export const DEFAUT: Reglages = {
   son: true,
-  relais: true,
   correction: true,
   stats: true,
   proposition: true,
@@ -103,7 +98,6 @@ export function completer(valeur: unknown): Reglages {
   const sansListe = mode('sansListe')
   return {
     son: actif('son'),
-    relais: actif('relais'),
     correction: ameliorer || corriger,
     stats: actif('stats'),
     proposition: actif('proposition'),
@@ -149,7 +143,6 @@ const sansAccents = (t: string) =>
 const ALIAS: Record<string, Module> = {
   son: 'son',
   sons: 'son',
-  relais: 'relais',
   correction: 'correction',
   plume: 'correction',
   stats: 'stats',
@@ -227,7 +220,7 @@ export const USAGE = [
   'MyConfig :',
   '  /myconfig                         ouvre le panneau des réglages',
   '  /myconfig etat                    résume les réglages',
-  '  /myconfig <module> on | off       son, relais, correction, stats, proposition, confirmation, progression',
+  '  /myconfig <module> on | off       son, correction, stats, proposition, confirmation, progression',
   '  /myconfig proposition 1 à 5       nombre de propositions',
   '  /myconfig proposition ligne | liste   sur une ligne, ou une par ligne',
   '  /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction',
@@ -235,6 +228,9 @@ export const USAGE = [
   '  /myconfig progression disparait 0 | 5 | 10 | 15 | jamais   secondes où la barre reste après la fin',
   '  /myconfig progression detail 3 | 6 | 9 | 12 | illimite   actions montrées dans le journal déplié',
 ].join('\n')
+
+export const RELAIS_TOUJOURS =
+  'MyConfig : le Relais n’a plus d’On / Off. Son bouton est dans l’onglet Stats du panneau ; « /relais » marche toujours.'
 
 export type Changement = { reglages: Reglages; message: string } | { erreur: string }
 
@@ -260,6 +256,11 @@ export function appliquer(r: Reglages, args: string): Changement {
       reglages: nouveau,
       message: `MyConfig : bouton ${nom} ${etatBouton ? 'affiché' : 'retiré'}${nouveau.correction ? '' : ' ; la Correction est à Off'}.`,
     }
+  }
+
+  // Le Relais n'a plus d'On / Off depuis la 0.8.0 : son bouton est dans l'onglet Stats.
+  if (sansAccents(premier) === 'relais') {
+    return { erreur: RELAIS_TOUJOURS }
   }
 
   const module = lireModule(premier)

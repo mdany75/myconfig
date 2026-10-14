@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { On, SessionContextUsage } from 'claude-code'
 
 import { estFeuVert, NOTE_ATTENTE, NOTE_FEU_VERT, REFUS, SECTION } from '../hooks/confirmation'
 import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE } from '../hooks/correction'
@@ -20,6 +20,8 @@ import {
   lignesJournal,
   majEtape,
   nouvelle,
+  pageJournal,
+  rangeesTexte,
   pourcentage,
   remplissagePiste,
   repartir,
@@ -30,8 +32,22 @@ import {
   visible,
 } from '../hooks/progression'
 import { consigne, extraire } from '../hooks/proposition'
-import { appliquer, completer, DEFAUT } from '../hooks/reglages'
-import { couleur, delai, glyphe, jetons, minutes, nomLimite, remplissage, trierLimites } from '../hooks/stats'
+import { appliquer, completer, DEFAUT, MODULES, RELAIS_TOUJOURS } from '../hooks/reglages'
+import {
+  cellules,
+  couleur,
+  delai,
+  dollars,
+  dureeSession,
+  glyphe,
+  jetons,
+  minutes,
+  nomCourt,
+  nomLimite,
+  partsContexte,
+  remplissage,
+  trierLimites,
+} from '../hooks/stats'
 
 const SURFACES = ['terminal', 'desktop'] as const
 
@@ -75,15 +91,31 @@ const forfait = () => ({
   ],
 })
 
+// Le contenu du contexte, comme « /context » le compte (seules les parts servent au mod).
+const CATEGORIES = [
+  { name: 'System prompt', tokens: 12_000, color: 'promptBorder', isDeferred: false, kind: 'used' as const },
+  { name: 'MCP tools', tokens: 30_000, color: 'cyan', isDeferred: true, kind: 'deferred' as const },
+  { name: 'Messages', tokens: 56_000, color: 'permission', isDeferred: false, kind: 'used' as const },
+  { name: 'Free space', tokens: 99_000, color: 'inactive', isDeferred: false, kind: 'free' as const },
+  { name: 'Autocompact buffer', tokens: 33_000, color: 'inactive', isDeferred: false, kind: 'buffer' as const },
+]
+const CONTENU = { categories: CATEGORIES } as unknown as NonNullable<SessionContextUsage['breakdown']>
+
 // Le monde sous le mod : store, horloge à 12 minutes, contexte à 34 %, modèle et prompts simulés.
 function simuler(on: On, envoyes: string[] = [], store: Record<string, unknown> = {}, limites = forfait()) {
   mock.store(on, store)
   const horloge = mock.clock(on, { now: MAINTENANT })
-  on('session.usage', () => ({
+  on('session.usage', (_$, e) => ({
     value: {
       startedAt: 0,
-      context: { tokens: 68_000, window: 200_000, percent: 34 },
+      context: {
+        tokens: 68_000,
+        window: 200_000,
+        percent: 34,
+        ...(e.breakdown === undefined ? {} : { breakdown: CONTENU }),
+      },
       rateLimits: limites.limites,
+      cost: { usd: 4.82 },
     },
   }))
   on('model.fork', () => ({
@@ -139,6 +171,10 @@ describe('fonctions pures', () => {
     expect('reglages' in jauge && jauge.reglages.stats).toBe(false)
     expect('erreur' in appliquer(DEFAUT, 'proposition 7')).toBe(true)
     expect('erreur' in appliquer(DEFAUT, 'lune on')).toBe(true)
+    // Le Relais n'a plus d'On / Off : il vit dans l'onglet Stats.
+    expect(appliquer(DEFAUT, 'relais off')).toEqual({ erreur: RELAIS_TOUJOURS })
+    expect(MODULES).not.toContain('relais')
+    expect(completer({ relais: false })).toEqual(DEFAUT)
   })
 
   test('la Correction suit ses deux boutons', () => {
@@ -201,6 +237,24 @@ describe('fonctions pures', () => {
     expect(couleur(85)).toBe('error')
     expect(glyphe(34)).toBe('◔')
     expect(glyphe(null)).toBe('○')
+  })
+
+  test('l’onglet Stats : contenu du contexte, durée, coût, noms courts', () => {
+    const parts = partsContexte(CATEGORIES)
+    expect(parts.map(x => x.nom)).toEqual(['Système', 'Messages', 'Libre', 'Réserve'])
+    expect(parts.map(x => x.sorte)).toEqual(['used', 'used', 'free', 'buffer'])
+    const n = cellules(parts, 40)
+    expect(n.reduce((t, x) => t + x, 0)).toBe(40)
+    expect(n.every(x => x >= 1)).toBe(true)
+    // Une part minuscule garde au moins une cellule.
+    expect(cellules([{ nom: 'A', jetons: 1, teinte: '#000', sorte: 'used' }, { nom: 'B', jetons: 999, teinte: '#000', sorte: 'free' }], 10)).toEqual([1, 9])
+    expect(dollars(4.82)).toMatch(/^4,82\s\$ US$/)
+    expect(dollars(null)).toBe('—')
+    expect(dureeSession(0, 45 * 60_000)).toBe('45 min')
+    expect(dureeSession(0, 72 * 60_000)).toBe('1 h 12 min')
+    expect(nomCourt('five_hour')).toBe('Limite 5 h')
+    expect(nomCourt('seven_day')).toBe('Semaine')
+    expect(nomCourt('seven_day_opus')).toBe('Semaine · Opus')
   })
 })
 
@@ -546,6 +600,32 @@ describe('la Progression sans liste (fonctions pures)', () => {
     // Une ancre inconnue (une autre tâche) : les dernières actions.
     expect(lignesJournal(p, 20, 3, 'ailleurs')).toMatchObject({ debut: 9 })
   })
+
+  test('le titre entier : coupé aux espaces, sur autant de rangées qu’il faut', () => {
+    expect(rangeesTexte('', 10)).toBe(1)
+    expect(rangeesTexte('Lance les tests', 20)).toBe(1)
+    expect(rangeesTexte('Lance les tests', 9)).toBe(2)
+    expect(rangeesTexte('abcdefghijklmnopqrstuvwxyz', 10)).toBe(3)
+    expect(rangeesTexte('ab abcdefghijklmnopqrstuvwxyz', 10)).toBe(4)
+  })
+
+  test('une page du journal tient dans ses rangées, même avec de longs titres', () => {
+    let p = nouvelle('Lis', 0)
+    const long = 'Convertit les presets au format de la version 2 du schéma en gardant les anciens noms'
+    for (let i = 0; i < 6; i++) {
+      const description = { nom: 'Bash', libelle: i % 2 === 0 ? long : 'Court', complement: 'node x.mjs' }
+      p = finirAction(debuterAction(p, `a${i}`, 'bash', 'Bash', i * 1000, description), `a${i}`, i * 1000 + 500)
+    }
+    // Assez de place : 6 actions, les longues sur 2 rangées.
+    const large = pageJournal(p, 9_000, 6, 12, 60)
+    expect(large).toMatchObject({ taille: 6, hauteur: 9 })
+    // Moins de rangées : la page se raccourcit, les dernières actions d'abord.
+    const serre = pageJournal(p, 9_000, 6, 5, 60)
+    expect(serre.hauteur).toBeLessThanOrEqual(5)
+    expect(serre.lignes.at(-1)?.id).toBe('a5')
+    // Au moins une action, même trop longue.
+    expect(pageJournal(p, 9_000, 6, 1, 20).taille).toBe(1)
+  })
 })
 
 describe('la Progression sans liste dans la bande', () => {
@@ -619,13 +699,15 @@ describe('la Progression sans liste dans la bande', () => {
       await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/Users/dany/Developer/x/README.md' })
       await $.tool.call({ tool: 'Bash', tool_use_id: 'b1', command: 'claude plugin test .', description: 'Lance les tests' })
       expect(await ui.find({ key: 'progression-journal' })).toBeUndefined()
-      expect(await ui.find({ type: 'Text', text: ' ▾' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: ' ▼' })).toBeDefined()
 
       await ui.press({ key: 'progression-detail' })
       expect(await ui.find({ key: 'progression-journal' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: ' ▴' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: '  ~/Developer/x' })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: '  claude plugin test .' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: ' ▲' })).toBeDefined()
+      // Journal 1 : le titre seul, sans le détail en gris.
+      expect(await ui.find({ type: 'Text', text: 'README.md' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Lance les tests' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /claude plugin test|~\/Developer\/x/ })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: '1 s' })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: '4 s' })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: '✓' })).toBeDefined()
@@ -695,17 +777,47 @@ describe('la Progression sans liste dans la bande', () => {
 
 describe('la bande', () => {
   for (const surface of SURFACES) {
-    test(`montre Correction, Stats, Relais et ⚙, sans quotas de 5 h ni de 7 jours (${surface})`, async ($, on) => {
+    test(`montre Correction, Stats, Confirmation et ⚙, sans Relais ni quotas (${surface})`, async ($, on) => {
       simuler(on)
       await etat($)
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
-      for (const key of ['myconfig', 'ameliorer', 'revenir', 'stats', 'relais', 'reglages']) {
+      for (const key of ['myconfig', 'ameliorer', 'revenir', 'stats', 'confirmation', 'reglages']) {
         expect(await ui.find({ key })).toBeDefined()
       }
+      expect(await ui.find({ key: 'relais' })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: /34 %/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /68k\/200k · 12 min/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /5h|7j/ })).toBeUndefined()
-      expect(await ui.find({ type: 'Text', text: /Confirmation/ })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: /Confirmation|Feu vert/ })).toBeUndefined()
+      await ui.unmount()
+    })
+
+    test(`le bouton Confirmation : ▶ normal à Off, ⏸ foncé à On, un clic bascule (${surface})`, async ($, on) => {
+      simuler(on)
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      const bouton = async () => (await ui.find({ type: 'Button', key: 'confirmation' }))?.props
+      expect(await bouton()).toMatchObject({ label: '▶', variant: 'secondary' })
+
+      await ui.press({ key: 'confirmation' })
+      expect(await bouton()).toMatchObject({ label: '⏸', variant: 'primary' })
+      expect(await etat($)).toContain('Confirmation : On')
+
+      await ui.press({ key: 'confirmation' })
+      expect(await bouton()).toMatchObject({ label: '▶', variant: 'secondary' })
+      expect(await etat($)).toContain('Confirmation : Off')
+      await ui.unmount()
+    })
+
+    test(`remise à On, la Confirmation attend un nouveau feu vert (${surface})`, async ($, on) => {
+      simuler(on)
+      on('tool.call', () => ({ result: 'écrit' }))
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      await ui.press({ key: 'confirmation' })
+      await $.prompt.submit({ text: 'go', origin: { kind: 'composer' }, wait: false })
+      await ui.press({ key: 'confirmation' })
+      await ui.press({ key: 'confirmation' })
+      const refuse = await $.tool.call({ tool: 'Write', tool_use_id: 't1', file_path: '/tmp/a.md', content: 'x' })
+      expect('deny' in refuse ? refuse.deny : undefined).toBe(REFUS)
       await ui.unmount()
     })
 
@@ -713,12 +825,13 @@ describe('la bande', () => {
       simuler(on)
       await myconfig($, 'correction off')
       await myconfig($, 'stats off')
-      await myconfig($, 'relais off')
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
-      for (const key of ['ameliorer', 'stats', 'relais']) {
+      for (const key of ['ameliorer', 'stats']) {
         expect(await ui.find({ key })).toBeUndefined()
       }
+      // ⚙ et le bouton Confirmation restent : c'est lui qui la remet à On.
       expect(await ui.find({ key: 'reglages' })).toBeDefined()
+      expect(await ui.find({ key: 'confirmation' })).toBeDefined()
       await ui.unmount()
     })
 
@@ -884,9 +997,10 @@ describe('le panneau', () => {
     test(`six onglets, et chaque réglage est gardé dans le store (${surface})`, async ($, on) => {
       simuler(on)
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
-      for (const m of ['son', 'relais', 'correction', 'stats', 'proposition', 'confirmation', 'progression']) {
+      for (const m of ['son', 'correction', 'stats', 'proposition', 'confirmation', 'progression']) {
         expect(await ui.find({ type: 'Button', key: `onglet-${m}` })).toBeDefined()
       }
+      expect(await ui.find({ type: 'Button', key: 'onglet-relais' })).toBeUndefined()
       expect(await ui.find({ type: 'Button', key: 'tester' })).toBeDefined()
 
       await ui.press({ key: 'off' })
@@ -906,6 +1020,50 @@ describe('le panneau', () => {
       await ui.unmount()
     })
   }
+
+  for (const surface of SURFACES) {
+    test(`l’onglet Stats : la session, le forfait et le Relais (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      await ui.press({ key: 'onglet-stats' })
+      for (const texte of ['Cette session', 'Forfait', 'Relais', 'Limite 5 h', 'Semaine', '12 min', '34 %']) {
+        expect(await ui.find({ type: 'Text', text: texte })).toBeDefined()
+      }
+      expect(await ui.find({ type: 'Text', text: '68k / 200k jetons' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^· 4,82\s\$ US$/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: ' Messages 56k' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: / MCP / })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: /deux clics/ })).toBeUndefined()
+
+      // Le Relais : un premier clic demande confirmation, qui s'éteint après 6 secondes.
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('⇄ Relais')
+      await ui.press({ key: 'relais' })
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('Confirmer ?')
+      await horloge.advance(6_500)
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('⇄ Relais')
+
+      // Pendant que Claude travaille, le bouton attend.
+      await $.turn.start({ text: 'Travaille', turnId: 't1' })
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.dimColor).toBe(true)
+      await ui.press({ key: 'relais' })
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('⇄ Relais')
+      await ui.unmount()
+    })
+  }
+
+  test('« /relais » marche sans réglage, et un ancien « relais : false » n’y change rien', async ($, on) => {
+    simuler(on, [], { reglages: { ...DEFAUT, relais: false } })
+    on('session.root', () => ({ value: '/tmp/projet' }))
+    const texte = ((await $.command.run({
+      command: 'relais',
+      args: 'dernier',
+      origin: { kind: 'composer' },
+      presentation: { isFullscreen: false, columns: 140 },
+    })) as { text: string }).text
+    expect(texte).not.toContain('Off')
+    expect(((await myconfig($, 'relais off')) as { text: string }).text).toBe(RELAIS_TOUJOURS)
+  })
 
   test('les réglages gardés dans le store sont relus', async ($, on) => {
     simuler(on, [], { reglages: { ...DEFAUT, son: false, nombre: 2 } })

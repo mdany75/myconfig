@@ -1,4 +1,4 @@
-// MyConfig : les mods jauge, fil-son, relais, plume et cap réunis, plus la Confirmation.
+// MyConfig : les mods jauge, fil-son, relais, plume et cap réunis, plus la Confirmation et la Progression.
 // Tout ce qui touche au moteur ($) vit dans ce fichier : le moteur ne suit pas $ à travers
 // un import. Les autres fichiers de hooks/ ne contiennent que des fonctions pures.
 
@@ -39,8 +39,8 @@ import {
   EXEMPLE_MS,
   EXEMPLE_SANS_LISTE,
   finirAction,
-  lignesJournal,
   majEtape,
+  pageJournal,
   NOMS_SORTES,
   pisteSvg,
   pourcentage,
@@ -53,6 +53,7 @@ import {
   TEINTES_SORTES,
   terminee,
   titreAction,
+  titreJournal,
   totalActions,
   VERT_FIN,
   visible,
@@ -97,16 +98,22 @@ import { doitSonner } from './son'
 import {
   anneau,
   barre,
+  barreParts,
   BLEU,
+  cellules,
   couleur,
   delai,
   detail,
+  dollars,
+  dureeSession,
   glyphe,
   jetons,
   lire,
   minutes,
+  nomCourt,
   nomLimite,
   pourcent,
+  partsContexte,
   remplissage,
   trierLimites,
   VERT,
@@ -130,6 +137,8 @@ const feuVert = { plugin: 'myconfig', key: 'feuVert' } as const
 const progression = { plugin: 'myconfig', key: 'progression' } as const
 const journalOuvert = { plugin: 'myconfig', key: 'journalOuvert' } as const
 const journalAncre = { plugin: 'myconfig', key: 'journalAncre' } as const
+const repartition = { plugin: 'myconfig', key: 'repartition' } as const
+const auTravail = { plugin: 'myconfig', key: 'auTravail' } as const
 
 // Les réglages dans $.store, qui survit aux sessions et à « /clear ».
 const CLE_REGLAGES = 'reglages'
@@ -163,6 +172,13 @@ let chrono: { cancel: () => unknown } | undefined
 // Progression : seul le dernier exemple lancé du panneau compte.
 let exempleGeneration = 0
 
+// Dans l'app de bureau, une colonne de la bande fait près de 8 px : à 7, la piste et la barre de la
+// Progression s'arrêtaient vers 87 % de la carte.
+const PX_PAR_COLONNE = 7.9
+// Le chevron qui déplie le journal : ▼ / ▲ pleine taille (▾ / ▴ étaient minuscules dans l'app).
+const CHEVRON_FERME = ' ▼'
+const CHEVRON_OUVERT = ' ▲'
+
 type Bande = RenderInput<'AbovePrompt'>
 type Panneau = RenderInput<'Pane'>
 
@@ -191,7 +207,22 @@ async function changer($: EngineInterface, fn: (r: Reglages) => Reglages) {
 }
 
 async function ouvrirPanneau($: EngineInterface) {
-  return $.ui.open({ id: PANNEAU, title: TITRE })
+  const ouvert = await $.ui.open({ id: PANNEAU, title: TITRE })
+  if ((await $.state.get(onglet)).value === 'stats') {
+    await mesurer($)
+    await mesurerRepartition($)
+  }
+  return ouvert
+}
+
+// Le bouton ⏸ / ▶ de la bande : met la Confirmation à On ou à Off. Remise à On, elle attend un
+// nouveau feu vert : celui d'un message plus ancien ne compte plus.
+async function basculerConfirmation($: EngineInterface) {
+  const r = await lireReglages($)
+  if (!r.confirmation) {
+    await $.state.set(feuVert, false)
+  }
+  await ecrireReglages($, { ...r, confirmation: !r.confirmation })
 }
 
 const horsService = (nom: string) => `${nom} est à Off. « /myconfig ${nom.toLowerCase()} on » le remet.`
@@ -200,12 +231,23 @@ const horsService = (nom: string) => `${nom} est à Off. « /myconfig ${nom.toLo
 
 async function mesurer($: EngineInterface) {
   const usage = await $.session.usage()
-  await $.state.set(mesure, lire(usage.startedAt, usage.context, usage.rateLimits))
+  await $.state.set(mesure, lire(usage.startedAt, usage.context, usage.rateLimits, usage.cost))
   await $.state.set(maintenant, await $.clock.now())
   if (minuterie === undefined) {
     minuterie = $.clock.every(60_000, async () => {
       await $.state.set(maintenant, await $.clock.now())
     })
+  }
+}
+
+// Le contenu du contexte, pour l'onglet Stats : l'estimation locale de « /context » (`summary`),
+// qui n'envoie rien au modèle. Une panne laisse l'onglet sans la barre.
+async function mesurerRepartition($: EngineInterface) {
+  try {
+    const usage = await $.session.usage({ breakdown: 'summary' })
+    await $.state.set(repartition, partsContexte(usage.context.breakdown?.categories ?? []))
+  } catch {
+    await $.state.set(repartition, null)
   }
 }
 
@@ -671,7 +713,7 @@ async function commandeRelais($: EngineInterface, args: string): Promise<string>
 
 // ── La bande (croquis 1, « Tableau de bord ») ────────────────────────────────
 // Une carte arrondie : les propositions en haut, la Correction à gauche,
-// la Confirmation, les Stats, le Relais et ⚙ à droite.
+// les Stats, le bouton Confirmation (⏸ / ▶) et ⚙ à droite. Le Relais est dans l'onglet Stats.
 
 // L'anneau de contexte : un dessin SVG là où la surface en a, un quart de disque au terminal.
 function anneauDe($: EngineInterface, e: Bande, p: number | null): RenderElement {
@@ -873,23 +915,15 @@ async function bandeLimites($: EngineInterface, e: Bande): Promise<{ bloc: Rende
   return { bloc, rangs: 1 + Math.max(1, liste.length * 2) }
 }
 
-async function bandeRelais($: EngineInterface, e: Bande): Promise<RenderElement> {
+// Le bouton Confirmation de la bande (Bande 1) : ⏸ foncé à On, ▶ normal à Off ; un clic bascule.
+function boutonConfirmation($: EngineInterface, e: Bande, r: Reglages): RenderElement {
   const { Button } = $.ui.resolve(e)
-  const { value: en = null } = await $.state.get(etapeRelais)
-  const { value: m = null } = await $.state.get(mesure)
-  const occupe = en === 'redaction' || en === 'effacement'
-  const conseille = typeof m?.contexte === 'number' && m.contexte >= SEUIL_CONSEIL
   return (
     <Button
-      key="relais"
-      label={libelle(en, conseille)}
-      variant={en === 'a-confirmer' ? 'primary' : 'secondary'}
-      dimColor={occupe || e.props.isWorking}
-      onPress={() => {
-        if (!occupe && !e.props.isWorking) {
-          void cliquerRelais($)
-        }
-      }}
+      key="confirmation"
+      label={r.confirmation ? '⏸' : '▶'}
+      variant={r.confirmation ? 'primary' : 'secondary'}
+      onPress={() => void basculerConfirmation($)}
     />
   )
 }
@@ -971,7 +1005,7 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
     )
   } else {
     const { Svg } = $.ui.resolve(e)
-    const px = Math.round(largeur * 7)
+    const px = Math.round(largeur * PX_PAR_COLONNE)
     piste = (
       <Svg
         source={pisteSvg(segments, part, px, fini)}
@@ -1000,7 +1034,7 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
       <Box key="progression-piste">{piste}</Box>
       <Box key="progression-legende" flexDirection="row" gap={2}>
         <Button key="progression-detail" plain onPress={() => void basculerJournal($)}>
-          {[...legende, <Text dimColor>{ouvert ? ' ▴' : ' ▾'}</Text>]}
+          {[...legende, <Text dimColor>{ouvert ? CHEVRON_OUVERT : CHEVRON_FERME}</Text>]}
         </Button>
         <Box key="progression-legende-espace" flexGrow={1} />
         {fini ? (
@@ -1015,17 +1049,21 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
 
 // Le journal déplié d'un clic sous la barre (croquis 1) : les dernières actions, la plus récente
 // en bas ; ✓ faite, ◉ en cours (l'app de bureau dessine une image fixe : pas de roue qui tourne).
+// Journal 1 : l'outil, puis le titre entier (sans le détail en gris), sur plusieurs rangées au
+// besoin ; au plus `max` actions, dans `place` rangées.
 function journalDe(
   $: EngineInterface,
   e: Bande,
   p: Progression,
   instant: number,
   max: number,
+  place: number,
   ancre: string | null,
 ): { bloc: RenderElement; rangs: number } {
   const { Box, Button, Text } = $.ui.resolve(e)
-  const { lignes, avant, apres, debut, total } = lignesJournal(p, instant, max, ancre)
   const largeur = Math.max(10, e.props.bodyColumns - 4)
+  // Le titre a ce qui reste après l'état, l'outil (12) et trois espaces ; la durée se retire ensuite.
+  const { lignes, avant, apres, debut, total, taille, hauteur } = pageJournal(p, instant, max, place, largeur - 16, ancre)
   const rangees: RenderElement[] = lignes.map((l, i) => (
     <Box key={`journal-${i}`} flexDirection="row" gap={1} width="100%">
       <Box key={`journal-${i}-etat`} width={1} flexShrink={0}>
@@ -1038,9 +1076,8 @@ function journalDe(
         </Text>
       </Box>
       <Box key={`journal-${i}-quoi`} flexGrow={1} flexShrink={1}>
-        <Text wrap="truncate-end" bold={l.enCours}>
-          {l.libelle}
-          {l.complement === '' ? '' : <Text dimColor>{`${l.libelle === '' ? '' : '  '}${l.complement}`}</Text>}
+        <Text wrap="wrap" bold={l.enCours}>
+          {titreJournal(l)}
         </Text>
       </Box>
       <Box key={`journal-${i}-duree`} flexShrink={0}>
@@ -1048,7 +1085,7 @@ function journalDe(
       </Box>
     </Box>
   ))
-  if (total <= max) {
+  if (total <= taille) {
     return {
       bloc: (
         <Box key="progression-journal" flexDirection="column" width="100%">
@@ -1058,7 +1095,7 @@ function journalDe(
           {rangees.length > 0 ? rangees : <Text dimColor>Aucune action pour l’instant.</Text>}
         </Box>
       ),
-      rangs: 1 + Math.max(1, rangees.length),
+      rangs: 1 + Math.max(1, hauteur),
     }
   }
   // Plus d'actions que de place (croquis 2) : « ▲ » au-dessus, à la place du trait, et « ▼ » dessous ;
@@ -1070,7 +1107,7 @@ function journalDe(
       <Box key="progression-journal" flexDirection="column" width="100%">
         <Box key="journal-haut-ligne" flexDirection="row" width="100%">
           {avant > 0 ? (
-            <Button key="journal-haut" plain dimColor label={anciennes} onPress={() => void feuilleterJournal($, max, 'avant')} />
+            <Button key="journal-haut" plain dimColor label={anciennes} onPress={() => void feuilleterJournal($, taille, 'avant')} />
           ) : (
             <Text dimColor>Début de la tâche</Text>
           )}
@@ -1080,14 +1117,14 @@ function journalDe(
         {rangees}
         <Box key="journal-bas-ligne" flexDirection="row" width="100%">
           {apres > 0 ? (
-            <Button key="journal-bas" plain dimColor label={recentes} onPress={() => void feuilleterJournal($, max, 'apres')} />
+            <Button key="journal-bas" plain dimColor label={recentes} onPress={() => void feuilleterJournal($, taille, 'apres')} />
           ) : (
             <Text> </Text>
           )}
         </Box>
       </Box>
     ),
-    rangs: 2 + rangees.length,
+    rangs: 2 + hauteur,
   }
 }
 
@@ -1121,7 +1158,7 @@ async function bandeProgression(
   const { Box } = $.ui.resolve(e)
   // Sous la barre (3 rangées), le trait, ou « ▲ » et « ▼ », en prennent au plus 2.
   const { value: ancre = null } = await $.state.get(journalAncre)
-  const journal = journalDe($, e, p, instant, Math.max(1, Math.min(r.journalLignes ?? Infinity, place - 5)), ancre)
+  const journal = journalDe($, e, p, instant, r.journalLignes ?? Infinity, Math.max(1, place - 5), ancre)
   return {
     bloc: (
       <Box key="progression-ouverte" flexDirection="column" width="100%">
@@ -1168,7 +1205,7 @@ function bandeListe($: EngineInterface, e: Bande, p: Progression, instant: numbe
     )
   } else {
     const { Svg } = $.ui.resolve(e)
-    const px = Math.round(largeur * 7)
+    const px = Math.round(largeur * PX_PAR_COLONNE)
     barreDessinee = <Svg source={barre(pc, px, teinte)} alt={`${p.titre} : ${pc} %`} width={px} height={6} />
   }
 
@@ -1198,7 +1235,7 @@ function bandeListe($: EngineInterface, e: Bande, p: Progression, instant: numbe
       <Box key="progression-barre">{barreDessinee}</Box>
       <Box key="progression-points" flexDirection="row">
         <Button key="progression-detail" plain onPress={() => void basculerJournal($)}>
-          {[...morceaux, <Text>{'  '}</Text>, <Text dimColor>{legende}</Text>, <Text dimColor>{ouvert ? ' ▴' : ' ▾'}</Text>]}
+          {[...morceaux, <Text>{'  '}</Text>, <Text dimColor>{legende}</Text>, <Text dimColor>{ouvert ? CHEVRON_OUVERT : CHEVRON_FERME}</Text>]}
         </Button>
       </Box>
     </Box>
@@ -1230,17 +1267,13 @@ async function bande($: EngineInterface, e: Bande, dessous: RenderElement, model
       </Box>
     )
   const rangsHaut = (progres?.rangs ?? 0) + (prog !== undefined && suite !== undefined ? 1 : 0) + rangsSuite
-  const { value: vert = false } = await $.state.get(feuVert)
 
   const ligne = (
     <Box key="ligne" flexDirection="row" gap={1} alignItems="center" width="100%">
       {r.correction ? await bandeCorrection($, e, r, modele) : null}
       <Box key="espace" flexGrow={1} />
-      {r.confirmation ? (
-        <Text color={vert ? 'success' : 'warning'}>{vert ? '▶ Feu vert' : '⏸ Confirmation'}</Text>
-      ) : null}
       {r.stats ? await bandeStats($, e) : null}
-      {r.relais ? await bandeRelais($, e) : null}
+      {boutonConfirmation($, e, r)}
       <Button key="reglages" label="⚙" dimColor onPress={() => void ouvrirPanneau($)} />
     </Box>
   )
@@ -1286,10 +1319,177 @@ async function bande($: EngineInterface, e: Bande, dessous: RenderElement, model
 // ── Le panneau (croquis 5, « Onglets ») ──────────────────────────────────────
 // Un onglet par module, son état On/Off et les réglages propres au module affiché.
 
+// L'onglet Stats relit les chiffres et le contenu du contexte quand il s'affiche.
+async function choisirOnglet($: EngineInterface, m: Module) {
+  await $.state.set(onglet, m)
+  if (m === 'stats') {
+    await mesurer($)
+    await mesurerRepartition($)
+  }
+}
+
+// Le bouton Relais de l'onglet Stats : deux clics (« Confirmer ? » pendant 6 secondes), et rien
+// pendant que Claude travaille, comme l'ancien bouton de la bande.
+async function boutonRelais($: EngineInterface, e: Panneau): Promise<RenderElement> {
+  const { Button } = $.ui.resolve(e)
+  const { value: en = null } = await $.state.get(etapeRelais)
+  const { value: m = null } = await $.state.get(mesure)
+  const { value: travail = false } = await $.state.get(auTravail)
+  const occupe = en === 'redaction' || en === 'effacement'
+  const conseille = typeof m?.contexte === 'number' && m.contexte >= SEUIL_CONSEIL
+  return (
+    <Button
+      key="relais"
+      label={libelle(en, conseille)}
+      variant={en === 'a-confirmer' ? 'primary' : 'secondary'}
+      dimColor={occupe || travail}
+      onPress={() => {
+        if (!occupe && !travail) {
+          void cliquerRelais($)
+        }
+      }}
+    />
+  )
+}
+
+type Rangee = (cle: string, titre: string, ...enfants: RenderElement[]) => RenderElement
+
+// L'onglet Stats (croquis C) : cette session (contexte et son contenu, durée et coût), le forfait
+// (les limites de « /usage »), puis le Relais.
+async function ongletStats($: EngineInterface, e: Panneau, rangee: Rangee): Promise<RenderElement> {
+  const { Box, Text } = $.ui.resolve(e)
+  const { value: me = null } = await $.state.get(mesure)
+  const { value: instant = null } = await $.state.get(maintenant)
+  const { value: parts = null } = await $.state.get(repartition)
+  const p = me?.contexte ?? null
+  const fenetre = me === null ? '—' : `${me.jetons === null ? '0' : jetons(me.jetons)} / ${jetons(me.fenetre)} jetons`
+  // Les barres prennent ce qui reste à droite du libellé (16 colonnes) et des chiffres.
+  const largeur = Math.max(10, Math.min(40, e.props.bodyColumns - 40))
+
+  const titre = (cle: string, texte: string) => (
+    <Text key={cle} bold dimColor>
+      {texte}
+    </Text>
+  )
+
+  // La barre du contenu : un segment par part au terminal, un dessin dans l'app de bureau.
+  const barreContexte = (liste: NonNullable<typeof parts>): RenderElement => {
+    if (e.surface === 'terminal') {
+      const n = cellules(liste, largeur)
+      return (
+        <Text key="barre-contexte">
+          {liste.map((x, i) => (
+            <Text color={x.sorte === 'free' ? 'subtle' : x.teinte}>{'━'.repeat(n[i] ?? 0)}</Text>
+          ))}
+        </Text>
+      )
+    }
+    const { Svg } = $.ui.resolve(e)
+    const px = Math.round(largeur * 8)
+    return <Svg key="barre-contexte" source={barreParts(liste, px)} alt={`Contexte utilisé : ${pourcent(p)}`} width={px} height={8} />
+  }
+
+  const legende = (liste: NonNullable<typeof parts>): RenderElement => (
+    <Box key="legende-contexte" flexDirection="row" flexWrap="wrap" columnGap={2}>
+      {liste.map((x, i) => (
+        <Text key={`part-${i}`}>
+          <Text color={x.sorte === 'free' ? 'subtle' : x.teinte}>●</Text>
+          <Text dimColor>{` ${x.nom} ${jetons(x.jetons)}`}</Text>
+        </Text>
+      ))}
+    </Box>
+  )
+
+  const barreLimite = (kind: string, pourcentage: number): RenderElement => {
+    const n = Math.min(20, largeur)
+    if (e.surface === 'terminal') {
+      const { plein, vide } = remplissage(pourcentage, n)
+      return (
+        <Text key={`barre-${kind}`}>
+          <Text color={BLEU}>{'━'.repeat(plein)}</Text>
+          <Text color="subtle">{'━'.repeat(vide)}</Text>
+        </Text>
+      )
+    }
+    const { Svg } = $.ui.resolve(e)
+    const px = n * 8
+    return <Svg key={`barre-${kind}`} source={barre(pourcentage, px)} alt={`${nomLimite(kind)} : ${pourcent(pourcentage)}`} width={px} height={6} />
+  }
+
+  const session = [
+    rangee(
+      'contexte',
+      'Contexte',
+      <Text key="valeur" bold color={p === null ? 'subtle' : couleur(p)}>
+        {pourcent(p)}
+      </Text>,
+      <Text key="jetons" dimColor>
+        {fenetre}
+      </Text>,
+    ),
+  ]
+  if (parts !== null && parts.length > 0) {
+    session.push(rangee('contenu', '', barreContexte(parts)), rangee('legende', '', legende(parts)))
+  }
+  session.push(
+    rangee(
+      'duree',
+      'Durée',
+      <Text key="valeur">{me !== null && instant !== null ? dureeSession(me.debut, instant) : '—'}</Text>,
+      <Text key="cout" dimColor>
+        {me === null || me.cout === null ? '' : `· ${dollars(me.cout)}`}
+      </Text>,
+    ),
+  )
+
+  const limites = trierLimites(me?.limites ?? [])
+  const forfait =
+    limites.length > 0
+      ? limites.map(l => {
+          const quand = instant === null ? '' : delai(l.reinit, instant)
+          return rangee(
+            `limite-${l.kind}`,
+            nomCourt(l.kind),
+            barreLimite(l.kind, l.pourcent),
+            <Text key="valeur">{pourcent(l.pourcent)}</Text>,
+            <Text key="quand" dimColor>
+              {quand}
+            </Text>,
+          )
+        })
+      : [
+          <Text key="forfait-vide" dimColor>
+            Les limites arrivent avec la prochaine réponse (abonnement seulement).
+          </Text>,
+        ]
+
+  return (
+    <Box key="infos" flexDirection="column" gap={1}>
+      <Box key="session" flexDirection="column">
+        {titre('titre-session', 'Cette session')}
+        {session}
+      </Box>
+      <Box key="forfait" flexDirection="column">
+        {titre('titre-forfait', 'Forfait')}
+        {forfait}
+      </Box>
+      <Box key="relais-bloc" flexDirection="column">
+        {titre('titre-relais', 'Relais')}
+        <Box key="relais-ligne" flexDirection="row" gap={1} alignItems="center">
+          {await boutonRelais($, e)}
+          <Text dimColor>récapitule, efface, prépare la reprise</Text>
+        </Box>
+      </Box>
+    </Box>
+  )
+}
+
 async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<RenderElement> {
   const { Box, Button, Text } = $.ui.resolve(e)
   const r = await lireReglages($)
-  const { value: choisi = 'son' } = await $.state.get(onglet)
+  // Un onglet gardé d'une version plus ancienne (« relais ») revient aux Stats, où vit le Relais.
+  const { value: garde = 'son' } = await $.state.get(onglet)
+  const choisi: Module = MODULES.includes(garde) ? garde : 'stats'
   const actif = r[choisi]
 
   // Une rangée du contenu : son libellé à gauche, ses éléments à droite.
@@ -1323,7 +1523,7 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
           hotkey={String(i + 1)}
           variant={m === choisi ? 'primary' : undefined}
           dimColor={m !== choisi}
-          onPress={() => void $.state.set(onglet, m)}
+          onPress={() => void choisirOnglet($, m)}
         />
       ))}
     </Box>
@@ -1345,14 +1545,6 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
           'Essai',
           <Button key="tester" label="▶ Tester le son" onPress={() => void $.audio.play(SON).catch(() => undefined)} />,
         )
-      case 'relais':
-        return (
-          <Box key="infos" flexDirection="column">
-            <Text dimColor>Bouton « ⇄ Relais » de la bande (deux clics), ou « /relais ».</Text>
-            <Text dimColor>« /relais léger », « /relais dernier », « /relais purger [n] ».</Text>
-            <Text dimColor>{`Le bouton devient « ⇄ Relais ! » à partir de ${SEUIL_CONSEIL} % de contexte.`}</Text>
-          </Box>
-        )
       case 'correction':
         // Pas d'On/Off ici : la Correction est à Off quand aucun bouton n'est affiché.
         return (
@@ -1368,29 +1560,8 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
             <Text dimColor>« Revenir » remet ton texte. Aussi : « /correction », « /correction corriger ».</Text>
           </Box>
         )
-      case 'stats': {
-        const { value: me = null } = await $.state.get(mesure)
-        const { value: instant = null } = await $.state.get(maintenant)
-        const p = me?.contexte ?? null
-        const fenetre = me === null ? '—' : `${me.jetons === null ? '0' : jetons(me.jetons)} / ${jetons(me.fenetre)}`
-        return (
-          <Box key="infos" flexDirection="column">
-            {rangee(
-              'contexte',
-              'Contexte',
-              <Text key="valeur" bold color={p === null ? 'subtle' : couleur(p)}>
-                {pourcent(p)}
-              </Text>,
-            )}
-            {rangee('jetons', 'Jetons', <Text key="valeur">{fenetre}</Text>)}
-            {rangee(
-              'session',
-              'Session',
-              <Text key="valeur">{me !== null && instant !== null ? minutes(me.debut, instant) : '—'}</Text>,
-            )}
-          </Box>
-        )
-      }
+      case 'stats':
+        return await ongletStats($, e, rangee)
       case 'proposition': {
         const nombres: RenderElement[] = []
         for (let n = NOMBRE_MIN; n <= NOMBRE_MAX; n++) {
@@ -1503,7 +1674,7 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
                     : `La barre disparaît ${r.disparaitApres} s après la fin ; un clic sur son titre (✕) l’efface plus tôt.`}
               </Text>
               <Text dimColor>
-                {`Un clic sur la ligne sous la barre (▾) déplie ${r.journalLignes === null ? 'toutes les actions de Claude qui tiennent dans la bande' : `les ${r.journalLignes} dernières actions de Claude`}.`}
+                {`Un clic sur la ligne sous la barre (▼) déplie ${r.journalLignes === null ? 'toutes les actions de Claude qui tiennent dans la bande' : `les ${r.journalLignes} dernières actions de Claude`}.`}
               </Text>
             </Box>
           </Box>
@@ -1519,6 +1690,7 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
                 {!r.confirmation ? '—' : vert ? '▶ feu vert donné' : '⏸ en attente du feu vert'}
               </Text>,
             )}
+            <Text dimColor>Dans la bande : ⏸ foncé à On, ▶ à Off ; un clic bascule.</Text>
             <Text dimColor>Feu vert : « go », « vas-y », « tu peux y aller », « oui », « ok », « procède », « c’est bon ».</Text>
             <Text dimColor>Sans feu vert, Claude résume et demande ; Write, Edit et NotebookEdit sont refusés.</Text>
           </Box>
@@ -1542,7 +1714,7 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
         {await extras(choisi)}
       </Box>
       <Text dimColor>
-        {`Réglages gardés d’une session à l’autre · 1 à 7 : onglets · ${choisi === 'correction' ? 'a / c : boutons affichés' : choisi === 'progression' ? 'a / s : modes affichés' : 'o / f : On / Off'}`}
+        {`Réglages gardés d’une session à l’autre · 1 à ${MODULES.length} : onglets · ${choisi === 'correction' ? 'a / c : boutons affichés' : choisi === 'progression' ? 'a / s : modes affichés' : 'o / f : On / Off'}`}
       </Text>
     </Box>
   )
@@ -1607,16 +1779,16 @@ export const register: Register = (on, options) => {
   // Stats : la mesure ne porte pas le début de la session, il vient de la précédente.
   on('session.measure', async ($, e, next) => {
     const avant = (await $.state.get(mesure)).value?.debut ?? (await $.session.usage()).startedAt
-    await $.state.set(mesure, lire(avant, e.context, e.rateLimits))
+    await $.state.set(mesure, lire(avant, e.context, e.rateLimits, e.cost))
+    // L'onglet Stats montre le contenu du contexte : il suit chaque réponse.
+    if (e.changed.includes('context') && (await $.state.get(onglet)).value === 'stats') {
+      await mesurerRepartition($)
+    }
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('command.run', { command: 'relais' }, async ($, e) => {
-    if (!(await lireReglages($)).relais) {
-      return { text: horsService('Relais') }
-    }
-    return { text: await commandeRelais($, e.args.trim()) }
-  })
+  // Le Relais n'a plus d'On / Off : « /relais » marche toujours.
+  on('command.run', { command: 'relais' }, async ($, e) => ({ text: await commandeRelais($, e.args.trim()) }))
 
   on('command.run', { command: 'correction' }, async ($, e) => {
     if (!(await lireReglages($)).correction) {
@@ -1715,6 +1887,7 @@ export const register: Register = (on, options) => {
     const { value: avant = null } = await $.state.get(progression)
     await $.state.set(progression, demarrer(avant, e.text, instant))
     demarrerChrono($)
+    await $.state.set(auTravail, true)
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -1771,6 +1944,7 @@ export const register: Register = (on, options) => {
     // Progression : la tâche s'arrête (finie ou en pause) ; une interruption la retire aussitôt.
     if (!sousAgent) {
       arreterChrono()
+      await $.state.set(auTravail, false)
       const fin = await $.clock.now()
       if (e.reason === 'aborted' || e.reason === 'error') {
         // Une interruption la retire aussitôt ; une liste inachevée reprend au tour suivant.
