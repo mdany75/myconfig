@@ -1,5 +1,15 @@
 # Changements
 
+## 0.6.1 — 2026-10-13
+
+### Modifié
+- Onglet Progression : « Détail » propose 3, 6, 9, 12 actions ou Illimité (6 par défaut) ; un
+  ancien réglage de 18 devient 12.
+
+### Retiré
+- Onglet Progression : l'option « Effacer du chat » ; les commandes Bash s'affichent de nouveau
+  dans la conversation. `/myconfig progression masquer` n'existe plus.
+
 ## 0.6.0 — 2026-10-13
 
 ### Ajouté

@@ -250,8 +250,8 @@ describe('la Progression (fonctions pures)', () => {
     expect(demarrer({ ...p, fin: 1000, effacee: true }, 'continue', 2000).effacee).toBe(false)
   })
 
-  test('« Détail » et « Effacer du chat »', () => {
-    expect([DEFAUT.journalLignes, DEFAUT.masquerCommandes]).toEqual([6, false])
+  test('« Détail » : 3, 6, 9, 12 actions, ou illimité', () => {
+    expect(DEFAUT.journalLignes).toBe(6)
     expect(completer({ journalLignes: 7 }).journalLignes).toBe(6)
     expect(completer({ journalLignes: null }).journalLignes).toBe(null)
     const douze = appliquer(DEFAUT, 'progression detail 12')
@@ -259,9 +259,10 @@ describe('la Progression (fonctions pures)', () => {
     const tout = appliquer(DEFAUT, 'progression détail illimité')
     expect('reglages' in tout && tout.reglages.journalLignes).toBe(null)
     expect('erreur' in appliquer(DEFAUT, 'progression detail 7')).toBe(true)
-    const masquer = appliquer(DEFAUT, 'progression masquer on')
-    expect('reglages' in masquer && masquer.reglages.masquerCommandes).toBe(true)
-    expect('erreur' in appliquer(DEFAUT, 'progression masquer')).toBe(true)
+    const trois = appliquer(DEFAUT, 'progression detail 3')
+    expect('reglages' in trois && trois.reglages.journalLignes).toBe(3)
+    // Un ancien 18 (0.6.0) devient 12.
+    expect(completer({ journalLignes: 18 }).journalLignes).toBe(12)
   })
 
   test('visible pendant la tâche, puis 15 secondes après sa fin', () => {
@@ -401,42 +402,8 @@ describe('la Progression : disparaît après', () => {
   }
 })
 
-describe('la Progression : effacer les commandes du chat', () => {
+describe('la Progression : détail du journal', () => {
   for (const surface of SURFACES) {
-    test(`à On, une commande Bash ne s’affiche plus ; en erreur, si (${surface})`, async ($, on) => {
-      simuler(on)
-      // Sous le mod, le moteur dessine sa propre ligne d'outil.
-      on('ui.render', { component: 'ToolUse' }, () => ({ type: 'engine' as const, ref: 0 }))
-      const ligne = (tool: string, isErrored = false) => ({
-        plugin: 'myconfig',
-        surface,
-        component: 'ToolUse' as const,
-        props: { tool_use_id: 'b1', tool, input: { command: 'ls' }, isRunning: false, isErrored, isInterrupted: false },
-      })
-      const avant = await $.ui.mount(ligne('Bash'))
-      expect((await avant.drawn())?.type).not.toBe('Box')
-      await avant.unmount()
-
-      const pane = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
-      await pane.press({ key: 'onglet-progression' })
-      await pane.press({ key: 'masquer-on' })
-      expect(await etat($)).toContain('commandes masquées')
-      const bash = await $.ui.mount(ligne('Bash'))
-      expect((await bash.drawn())?.type).toBe('Box')
-      const erreur = await $.ui.mount(ligne('Bash', true))
-      expect((await erreur.drawn())?.type).not.toBe('Box')
-      const lecture = await $.ui.mount(ligne('Read'))
-      expect((await lecture.drawn())?.type).not.toBe('Box')
-
-      // Progression à Off : rien ne montrerait les commandes, elles s'affichent de nouveau.
-      await myconfig($, 'progression off')
-      const sansProgression = await $.ui.mount(ligne('Bash'))
-      expect((await sansProgression.drawn())?.type).not.toBe('Box')
-      for (const m of [bash, erreur, lecture, sansProgression, pane]) {
-        await m.unmount()
-      }
-    })
-
     test(`« Détail » règle le nombre d’actions du journal déplié (${surface})`, async ($, on) => {
       simuler(on)
       simulerTours(on)

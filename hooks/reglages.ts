@@ -58,7 +58,6 @@ export const DEFAUT: Reglages = {
   disposition: 'ligne',
   disparaitApres: 15,
   journalLignes: 6,
-  masquerCommandes: false,
 }
 
 export const NOMBRE_MIN = 1
@@ -70,7 +69,7 @@ export const DISPARITIONS = [0, 5, 10, 15, null] as const
 export const libelleDisparition = (s: number | null) => (s === null ? 'Jamais' : s === 0 ? 'Instantané' : `${s} s`)
 
 /** Les choix du « Détail » : les actions que le journal déplié montre ; null : illimité. */
-export const LIGNES_JOURNAL = [6, 12, 18, null] as const
+export const LIGNES_JOURNAL = [3, 6, 9, 12, null] as const
 
 export const libelleLignes = (n: number | null) => (n === null ? 'Illimité' : String(n))
 
@@ -117,12 +116,16 @@ export function completer(valeur: unknown): Reglages {
     nombre: typeof v.nombre === 'number' && Number.isFinite(v.nombre) ? borner(v.nombre) : DEFAUT.nombre,
     disposition: v.disposition === 'ligne' || v.disposition === 'liste' ? v.disposition : DEFAUT.disposition,
     disparaitApres: lireDisparition(v),
-    journalLignes:
-      'journalLignes' in v && LIGNES_JOURNAL.some(n => n === v.journalLignes)
-        ? (v.journalLignes as number | null)
-        : DEFAUT.journalLignes,
-    masquerCommandes: typeof v.masquerCommandes === 'boolean' ? v.masquerCommandes : DEFAUT.masquerCommandes,
+    journalLignes: lireLignes(v),
   }
+}
+
+// En 0.6.0, « Détail » allait jusqu'à 18 : au-delà de 12, on garde 12.
+function lireLignes(v: Record<string, unknown>): number | null {
+  if ('journalLignes' in v && LIGNES_JOURNAL.some(n => n === v.journalLignes)) {
+    return v.journalLignes as number | null
+  }
+  return typeof v.journalLignes === 'number' && v.journalLignes > 12 ? 12 : DEFAUT.journalLignes
 }
 
 // Avant la 0.6.0, « Reste après » (`resteApres`) allait de 0 à 30 s : au-delà de 15 s, on garde 15.
@@ -214,7 +217,7 @@ export function resume(r: Reglages) {
             ? 'disparaît aussitôt'
             : `disparaît après ${r.disparaitApres} s`
       const detail = r.journalLignes === null ? 'détail illimité' : `détail ${r.journalLignes}`
-      return `${base} · ${modesAffiches(r)} · ${disparait} · ${detail}${r.masquerCommandes ? ' · commandes masquées' : ''}`
+      return `${base} · ${modesAffiches(r)} · ${disparait} · ${detail}`
     }
     return m === 'correction' && r.correction ? `${base} · ${boutonsAffiches(r)}` : base
   }).join('\n')
@@ -230,8 +233,7 @@ export const USAGE = [
   '  /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction',
   '  /myconfig progression avec | sans on | off   affiche ou retire un mode de la Progression',
   '  /myconfig progression disparait 0 | 5 | 10 | 15 | jamais   secondes où la barre reste après la fin',
-  '  /myconfig progression detail 6 | 12 | 18 | illimite   actions montrées dans le journal déplié',
-  '  /myconfig progression masquer on | off   masque les commandes Bash dans le chat',
+  '  /myconfig progression detail 3 | 6 | 9 | 12 | illimite   actions montrées dans le journal déplié',
 ].join('\n')
 
 export type Changement = { reglages: Reglages; message: string } | { erreur: string }
@@ -302,7 +304,7 @@ export function appliquer(r: Reglages, args: string): Changement {
       }
     }
   }
-  // « /myconfig progression disparait 5 | jamais », « … detail 12 », « … masquer on » ;
+  // « /myconfig progression disparait 5 | jamais », « … detail 12 » ;
   // un nombre seul règle « Disparaît après ».
   if (module === 'progression') {
     const [motCle = '', valeur = ''] = reste.length === 2 ? reste : ['disparait', seul ?? '']
@@ -340,19 +342,7 @@ export function appliquer(r: Reglages, args: string): Changement {
               : `MyConfig : le journal déplié montre les ${n} dernières actions.`,
         }
       }
-      return { erreur: 'MyConfig : choisis 6, 12 ou 18 actions, ou « illimité ».' }
-    }
-    if (/^(masquer|commandes|cacher)$/.test(cle)) {
-      const masquer = lireEtat(valeur)
-      if (masquer === undefined) {
-        return { erreur: `MyConfig : ajoute « on » ou « off » après « ${motCle} ».` }
-      }
-      return {
-        reglages: { ...r, masquerCommandes: masquer },
-        message: masquer
-          ? 'MyConfig : les commandes Bash ne s’affichent plus dans le chat.'
-          : 'MyConfig : les commandes Bash s’affichent de nouveau dans le chat.',
-      }
+      return { erreur: 'MyConfig : choisis 3, 6, 9 ou 12 actions, ou « illimité ».' }
     }
   }
   if (module === 'proposition') {

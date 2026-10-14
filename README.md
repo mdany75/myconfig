@@ -17,7 +17,7 @@ réunit les boutons et les chiffres ; un panneau à onglets règle chaque module
 | **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. | On / Off |
 | **Proposition** | cap | Des suites logiques après chaque réponse ; un clic en lance une. | On / Off, 1 à 5, sur une ligne ou une par ligne ; modèle de la session |
 | **Confirmation** | — | Claude résume ce qu'il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit. | On / Off |
-| **Progression** | fil | L'avancement du travail : une barre fine et un point par étape de la liste de tâches de Claude ; sans liste, une piste de temps des actions. | Afficher : Avec liste, Sans liste (aucun = Off) ; disparaît après : instantané, 5 à 15 s, jamais ; détail : 6, 12, 18, illimité ; effacer du chat : On / Off |
+| **Progression** | fil | L'avancement du travail : une barre fine et un point par étape de la liste de tâches de Claude ; sans liste, une piste de temps des actions. | Afficher : Avec liste, Sans liste (aucun = Off) ; disparaît après : instantané, 5 à 15 s, jamais ; détail : 3, 6, 9, 12, illimité |
 
 ### La bande
 
@@ -51,9 +51,8 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 - **Progression** : pas d'On / Off, mais « Afficher » : « ☰ Avec liste » et « ▬ Sans liste », chacun
   affiché ou non dans la bande ; aucun des deux, et la Progression est à Off. « Disparaît après »
   (Instantané, 5 s, 10 s, 15 s, Jamais), le temps où la barre reste après la fin ; à « Jamais », elle
-  reste jusqu'à un clic sur son titre (✕). « Détail » (6, 12, 18, Illimité), le nombre d'actions que
-  le journal déplié montre. « Effacer du chat » (On / Off) : les commandes Bash et leur sortie ne
-  s'affichent plus dans la conversation ; une commande en erreur reste visible. « ▶ Avec liste » montre 20 secondes une tâche de 7 étapes, « ▶ Sans liste » rejoue la piste de
+  reste jusqu'à un clic sur son titre (✕). « Détail » (3, 6, 9, 12, Illimité), le nombre d'actions que
+  le journal déplié montre. « ▶ Avec liste » montre 20 secondes une tâche de 7 étapes, « ▶ Sans liste » rejoue la piste de
   temps d'une publication (8 actions).
 
 Au clavier, une fois le panneau sélectionné : `1` à `7` changent d'onglet, `o` et `f` mettent à On
@@ -103,7 +102,7 @@ Publie la version 0.3.0 de MyConfig                                ⏱ 1 min 12 
   est affiché).
 
 **Le détail, d'un clic** (croquis 1, « journal déplié ») : un clic sur la ligne sous la barre (les
-points et « ▾ ») déplie, dans la carte, les dernières actions de Claude (6, 12, 18 ou toutes celles
+points et « ▾ ») déplie, dans la carte, les dernières actions de Claude (3, 6, 9, 12 ou toutes celles
 qui tiennent dans la bande, au choix du panneau) ; un autre clic la replie. Dans le terminal, la
 barre elle-même est cliquable ; dans l'app de bureau, la barre est une image et c'est la ligne
 dessous qui prend le clic.
@@ -148,8 +147,7 @@ consigne la retient.
 /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction
 /myconfig progression avec | sans on | off   affiche ou retire un mode de la Progression
 /myconfig progression disparait 0 | 5 | 10 | 15 | jamais   secondes où la barre reste après la fin
-/myconfig progression detail 6 | 12 | 18 | illimite        actions du journal déplié
-/myconfig progression masquer on | off                     masque les commandes Bash dans le chat
+/myconfig progression detail 3 | 6 | 9 | 12 | illimite    actions du journal déplié
 /relais [léger | dernier | purger [n]]
 /correction <texte> | corriger <texte> | retour
 ```

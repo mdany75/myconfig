@@ -31,10 +31,8 @@ export type Reglages = {
    * ou 15 ; `null` (jamais) : elle reste jusqu'à un clic sur la barre.
    */
   disparaitApres: number | null
-  /** Actions que le journal déplié montre : 6, 12 ou 18 ; `null` : toutes celles qui tiennent. */
+  /** Actions que le journal déplié montre : 3, 6, 9 ou 12 ; `null` : toutes celles qui tiennent. */
   journalLignes: number | null
-  /** Les commandes Bash ne s'affichent plus dans le chat (sauf celles en erreur). */
-  masquerCommandes: boolean
 }
 
 /** Une limite d'utilisation du forfait (5 heures, hebdomadaire…), telle que la dernière réponse l'a donnée. */

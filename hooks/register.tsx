@@ -227,12 +227,6 @@ async function effacerProgression($: EngineInterface) {
   }
 }
 
-// « Effacer du chat » ne vaut que si la Progression est à On : ailleurs, rien ne montrerait les commandes.
-async function commandesMasquees($: EngineInterface) {
-  const r = await lireReglages($)
-  return r.progression && r.masquerCommandes
-}
-
 // Le temps où la barre reste après la fin : Jamais, jusqu'au clic qui l'efface.
 const resteMs = (r: Reglages) => (r.disparaitApres === null ? Infinity : r.disparaitApres * 1000)
 
@@ -1432,12 +1426,6 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
               ),
             )}
             {rangee(
-              'masquer',
-              'Effacer du chat',
-              choix('masquer-on', 'On', r.masquerCommandes, x => ({ ...x, masquerCommandes: true })),
-              choix('masquer-off', 'Off', !r.masquerCommandes, x => ({ ...x, masquerCommandes: false })),
-            )}
-            {rangee(
               'exemple',
               'Essai',
               <Button
@@ -1474,7 +1462,6 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
               <Text dimColor>
                 {`Un clic sur la ligne sous la barre (▾) déplie ${r.journalLignes === null ? 'toutes les actions de Claude qui tiennent dans la bande' : `les ${r.journalLignes} dernières actions de Claude`}.`}
               </Text>
-              <Text dimColor>Effacer du chat : les commandes Bash et leur sortie ne s’y affichent plus ; une commande en erreur reste visible.</Text>
             </Box>
           </Box>
         )
@@ -1758,24 +1745,6 @@ export const register: Register = (on, options) => {
     }
     return resultat
   }).catch(($, e, next) => next(e))
-
-  // Progression, « Effacer du chat » : les commandes Bash (la ligne et sa sortie) ne s'affichent plus,
-  // le journal de la barre les montre ; une commande en erreur ou interrompue reste visible.
-  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
-    if (e.props.tool !== 'Bash' || e.props.isErrored || e.props.isInterrupted || !(await commandesMasquees($))) {
-      return next(e)
-    }
-    const { Box } = $.ui.resolve(e)
-    return <Box />
-  })
-
-  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-    if (e.props.tool !== 'Bash' || e.props.isErrored || !(await commandesMasquees($))) {
-      return next(e)
-    }
-    const { Box } = $.ui.resolve(e)
-    return <Box />
-  })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const dessous = await next(e)
