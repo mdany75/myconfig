@@ -38,6 +38,8 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 ⚙ ou `/myconfig` ouvre le panneau MyConfig (croquis 5, « Onglets ») : un onglet par module
 (● On, ○ Off), son état On / Off et ses réglages propres.
 
+![Le panneau MyConfig, onglet Proposition](docs/panneau.png)
+
 - **Son** : bouton « ▶ Tester le son ».
 - **Correction** : pas d'On / Off, mais « Afficher » : « ✎ Améliorer » et « ✓ Correction », chacun affiché
   ou non dans la bande ; aucun des deux, et la Correction est à Off. Le modèle est rappelé dessous.
@@ -126,4 +128,4 @@ terminal et dans l'app de bureau ; ils ne jouent aucun son et n'écrivent aucun 
 - `types/index.d.ts` : contrat des valeurs de `$.state`
 - `sons/fin.aiff` : signal de fin
 - `tests/` : tests du mod
-- `docs/` : captures d'écran
+- `docs/` : captures d'écran (`capture.png` la bande, `panneau.png` le panneau)
