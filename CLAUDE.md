@@ -67,6 +67,9 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   `progression-detail` (la ligne sous la barre ; un `Button` ne peut pas contenir le `Svg` de la
   barre) bascule `journalOuvert` ; `journalDe` dessine les `journalLignes` dernières (réglage
   « Détail » ; `null` : illimité), sans dépasser la place que la bande laisse (`e.props.maxRows`).
+  Plus d'actions que de place : « ▲ » (`journal-haut`, à la place du trait) et « ▼ » (`journal-bas`)
+  feuillettent par pages ; `journalAncre` garde l'id de la première action montrée (`null` : les
+  dernières), remis à `null` quand le journal se replie ou se rouvre.
 - Progression sans liste : le hook `tool.call` sans matcher (partagé avec la garde de la
   Confirmation) note chaque action du fil principal (`debuterAction` / `finirAction`) ; les
   actions consécutives de même sorte forment un segment (`BLOCS_MAX` au plus). La piste se remplit

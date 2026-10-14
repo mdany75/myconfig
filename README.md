@@ -107,18 +107,14 @@ qui tiennent dans la bande, au choix du panneau) ; un autre clic la replie. Dans
 barre elle-même est cliquable ; dans l'app de bureau, la barre est une image et c'est la ligne
 dessous qui prend le clic.
 
-```
-●  Bash ×3   ●  Lecture ×2   ●  Modif. ×1 ▴          En cours : Bash · Commit, push…
-──────────────────────────────────────────────────────────────────────────────────
-+ 2 actions plus anciennes
-✓ ● Read        CHANGELOG.md  ~/Developer/Plugins/myconfig                   1 s
-✓ ● Edit        plugin.json  ~/Developer/Plugins/myconfig/.claude-plugin     2 s
-✓ ● Bash        Lance les tests  claude plugin test .                         5 s
-◉ ● Bash        Commit, push, tag  git commit -F - && git push origin main    3 s
-```
+![Le journal déplié sous la piste de la Progression, dans l'app de bureau de Claude](docs/journal.png)
 
 - Chaque action : ✓ faite ou ◉ en cours, l'outil (point de la couleur de sa sorte), ce qu'il touche
   (fichier, description de la commande, motif), le détail en gris (la commande, le dossier) et sa durée.
+- Plus d'actions que de place : « ▲ N actions plus anciennes » remplace le trait au-dessus du
+  journal, avec la position à droite (« 4–6 sur 12 ») ; un clic recule d'une page (autant d'actions
+  que le « Détail »), et « ▼ N plus récentes », dessous, avance. La page reste en place quand de
+  nouvelles actions arrivent ; replié puis rouvert, le journal revient aux dernières actions.
 - Le journal garde les 200 dernières actions de la tâche ; il marche aussi avec une liste de tâches,
   sous le chapelet. Il reste déplié d'une tâche à l'autre, jusqu'au clic suivant.
 
@@ -202,4 +198,4 @@ terminal et dans l'app de bureau ; ils ne jouent aucun son et n'écrivent aucun 
 - `types/index.d.ts` : contrat des valeurs de `$.state`
 - `sons/fin.aiff` : signal de fin
 - `tests/` : tests du mod
-- `docs/` : captures d'écran (`capture.png` la bande, `panneau.png` le panneau)
+- `docs/` : captures d'écran (`capture.png` la bande, `panneau.png` le panneau, `journal.png` le journal déplié)

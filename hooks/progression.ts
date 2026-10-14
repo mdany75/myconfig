@@ -354,19 +354,40 @@ export function finirAction(p: Progression, id: string, maintenant: number): Pro
 
 export type LigneJournal = ActionJournal & { duree: number; enCours: boolean }
 
+// Où commence la fenêtre : à l'ancre (l'id de la première action montrée), ou sur les dernières
+// actions quand l'ancre est absente ou n'existe plus (une nouvelle tâche, le journal rogné).
+function debutFenetre(journal: readonly ActionJournal[], max: number, ancre: string | null) {
+  const fin = Math.max(0, journal.length - max)
+  const i = ancre === null ? -1 : journal.findIndex(a => a.id === ancre)
+  return i < 0 ? fin : Math.min(i, fin)
+}
+
 /**
- * Les dernières actions du journal, la plus récente à la fin, et le nombre de plus anciennes.
- * Une action restée ouverte à la fin de la tâche (interrompue) compte jusqu'à cette fin.
+ * Une page du journal : `max` actions à partir de l'ancre, ou les dernières ; avec le nombre
+ * d'actions avant et après la page. Une action restée ouverte à la fin de la tâche (interrompue)
+ * compte jusqu'à cette fin.
  */
-export function lignesJournal(p: Progression, maintenant: number, max = JOURNAL_LIGNES) {
+export function lignesJournal(p: Progression, maintenant: number, max = JOURNAL_LIGNES, ancre: string | null = null) {
   const journal = p.journal ?? []
-  const montrees = journal.slice(-max)
+  const debut = debutFenetre(journal, max, ancre)
+  const montrees = journal.slice(debut, debut + max)
   const lignes: LigneJournal[] = montrees.map(a => ({
     ...a,
     duree: Math.max(0, (a.fin ?? p.fin ?? maintenant) - a.debut),
     enCours: a.fin === null && p.fin === null,
   }))
-  return { lignes, plus: journal.length - montrees.length }
+  return { lignes, avant: debut, apres: journal.length - debut - montrees.length, debut, total: journal.length }
+}
+
+/** ▲ : l'ancre de la page d'avant. */
+export function ancrePrecedente(journal: readonly ActionJournal[], max: number, ancre: string | null) {
+  return journal[Math.max(0, debutFenetre(journal, max, ancre) - max)]?.id ?? null
+}
+
+/** ▼ : l'ancre de la page d'après ; au bout, rien, et la page suit de nouveau les dernières actions. */
+export function ancreSuivante(journal: readonly ActionJournal[], max: number, ancre: string | null) {
+  const debut = debutFenetre(journal, max, ancre) + max
+  return debut >= journal.length - max ? null : (journal[debut]?.id ?? null)
 }
 
 export type Segment = { sorte: SorteAction; duree: number; enCours: boolean }

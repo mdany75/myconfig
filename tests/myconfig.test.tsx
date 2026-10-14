@@ -9,6 +9,8 @@ import {
   appliquerTodos,
   chapelet,
   compter,
+  ancrePrecedente,
+  ancreSuivante,
   debuterAction,
   decrireOutil,
   demarrer,
@@ -414,12 +416,49 @@ describe('la Progression : détail du journal', () => {
         await $.tool.call({ tool: 'Read', tool_use_id: `r${i}`, file_path: `/x/f${i}.md` })
       }
       await ui.press({ key: 'progression-detail' })
-      expect(await ui.find({ type: 'Text', text: '+ 14 actions plus anciennes' })).toBeDefined()
+      const haut = async () => (await ui.find({ type: 'Button', key: 'journal-haut' }))?.props.label
+      expect(await haut()).toBe('▲ 14 actions plus anciennes')
       await myconfig($, 'progression detail 12')
-      expect(await ui.find({ type: 'Text', text: '+ 8 actions plus anciennes' })).toBeDefined()
+      expect(await haut()).toBe('▲ 8 actions plus anciennes')
       await myconfig($, 'progression detail illimite')
-      expect(await ui.find({ type: 'Text', text: /plus anciennes?$/ })).toBeUndefined()
+      expect(await ui.find({ key: 'journal-haut-ligne' })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: /^f0\.md/ })).toBeDefined()
+      await ui.unmount()
+    })
+
+    test(`▲ et ▼ feuillettent le journal par pages ; la page reste en place (${surface})`, async ($, on) => {
+      simuler(on)
+      simulerTours(on)
+      await myconfig($, 'progression detail 3')
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      await $.turn.start({ text: 'Lis tout', turnId: 't1' })
+      for (let i = 0; i < 12; i++) {
+        await $.tool.call({ tool: 'Read', tool_use_id: `r${i}`, file_path: `/x/f${i}.md` })
+      }
+      await ui.press({ key: 'progression-detail' })
+      const label = async (key: string) => (await ui.find({ type: 'Button', key }))?.props.label
+      expect(await label('journal-haut')).toBe('▲ 9 actions plus anciennes')
+      expect(await ui.find({ type: 'Text', text: '10–12 sur 12' })).toBeDefined()
+      expect(await ui.find({ key: 'journal-bas' })).toBeUndefined()
+
+      await ui.press({ key: 'journal-haut' })
+      expect(await ui.find({ type: 'Text', text: '7–9 sur 12' })).toBeDefined()
+      expect(await label('journal-bas')).toBe('▼ 3 plus récentes')
+      expect(await ui.find({ type: 'Text', text: /^f6\.md/ })).toBeDefined()
+
+      // Une nouvelle action ne déplace pas la page que l'on regarde.
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r12', file_path: '/x/f12.md' })
+      expect(await ui.find({ type: 'Text', text: '7–9 sur 13' })).toBeDefined()
+
+      await ui.press({ key: 'journal-haut' })
+      await ui.press({ key: 'journal-haut' })
+      expect(await ui.find({ type: 'Text', text: 'Début de la tâche' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '1–3 sur 13' })).toBeDefined()
+
+      // Replié puis rouvert, le journal montre de nouveau les dernières actions.
+      await ui.press({ key: 'progression-detail' })
+      await ui.press({ key: 'progression-detail' })
+      expect(await ui.find({ type: 'Text', text: '11–13 sur 13' })).toBeDefined()
       await ui.unmount()
     })
   }
@@ -476,8 +515,8 @@ describe('la Progression sans liste (fonctions pures)', () => {
     p = debuterAction(p, 'a', 'lecture', 'Read · README.md', 0, lire)
     p = finirAction(p, 'a', 2_000)
     p = debuterAction(p, 'b', 'bash', 'Bash · Teste', 2_000)
-    const { lignes, plus } = lignesJournal(p, 9_000)
-    expect(plus).toBe(0)
+    const { lignes, avant } = lignesJournal(p, 9_000)
+    expect(avant).toBe(0)
     expect(lignes.map(l => [l.nom, l.libelle, l.duree, l.enCours])).toEqual([
       ['Read', 'README.md', 2_000, false],
       ['Bash · Teste', '', 7_000, true],
@@ -488,7 +527,24 @@ describe('la Progression sans liste (fonctions pures)', () => {
       p = finirAction(debuterAction(p, `x${i}`, 'bash', 'Bash', 10_000), `x${i}`, 11_000)
     }
     expect(p.journal).toHaveLength(JOURNAL_MAX)
-    expect(lignesJournal(p, 12_000)).toMatchObject({ plus: JOURNAL_MAX - 6 })
+    expect(lignesJournal(p, 12_000)).toMatchObject({ avant: JOURNAL_MAX - 6, apres: 0 })
+  })
+
+  test('les pages du journal : ▲ recule, ▼ avance, puis suit les dernières actions', () => {
+    let p = nouvelle('Lis', 0)
+    for (let i = 0; i < 12; i++) {
+      p = finirAction(debuterAction(p, `a${i}`, 'lecture', 'Read', i), `a${i}`, i + 1)
+    }
+    const journal = p.journal ?? []
+    expect(lignesJournal(p, 20, 3)).toMatchObject({ debut: 9, avant: 9, apres: 0, total: 12 })
+    const precedente = ancrePrecedente(journal, 3, null)
+    expect(precedente).toBe('a6')
+    expect(lignesJournal(p, 20, 3, precedente)).toMatchObject({ debut: 6, avant: 6, apres: 3 })
+    expect(ancreSuivante(journal, 3, 'a3')).toBe('a6')
+    expect(ancreSuivante(journal, 3, 'a6')).toBe(null)
+    expect(ancrePrecedente(journal, 3, 'a0')).toBe('a0')
+    // Une ancre inconnue (une autre tâche) : les dernières actions.
+    expect(lignesJournal(p, 20, 3, 'ailleurs')).toMatchObject({ debut: 9 })
   })
 })
 

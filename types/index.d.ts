@@ -165,6 +165,8 @@ declare module 'claude-code' {
       progression: Progression | null
       /** Vrai quand un clic sous la barre de Progression a déplié le journal des actions. */
       journalOuvert: boolean
+      /** L'id de la première action de la page montrée (▲ ▼) ; rien : les dernières actions. */
+      journalAncre: string | null
     }
   }
 }

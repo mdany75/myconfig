@@ -26,6 +26,8 @@ import { USAGE as USAGE_CORRECTION } from './correction'
 import {
   actionCourante,
   ajouterEtape,
+  ancrePrecedente,
+  ancreSuivante,
   appliquerTodos,
   chapelet,
   compter,
@@ -127,6 +129,7 @@ const etapeRelais = { plugin: 'myconfig', key: 'etapeRelais' } as const
 const feuVert = { plugin: 'myconfig', key: 'feuVert' } as const
 const progression = { plugin: 'myconfig', key: 'progression' } as const
 const journalOuvert = { plugin: 'myconfig', key: 'journalOuvert' } as const
+const journalAncre = { plugin: 'myconfig', key: 'journalAncre' } as const
 
 // Les réglages dans $.store, qui survit aux sessions et à « /clear ».
 const CLE_REGLAGES = 'reglages'
@@ -217,6 +220,16 @@ async function basculerLimites($: EngineInterface) {
 async function basculerJournal($: EngineInterface) {
   const { value: ouvert = false } = await $.state.get(journalOuvert)
   await $.state.set(journalOuvert, !ouvert)
+  // Rouvert, le journal montre de nouveau les dernières actions.
+  await $.state.set(journalAncre, null)
+}
+
+// ▲ ▼ : la page d'avant ou d'après du journal, `max` actions à la fois.
+async function feuilleterJournal($: EngineInterface, max: number, sens: 'avant' | 'apres') {
+  const { value: p = null } = await $.state.get(progression)
+  const { value: ancre = null } = await $.state.get(journalAncre)
+  const journal = p?.journal ?? []
+  await $.state.set(journalAncre, sens === 'avant' ? ancrePrecedente(journal, max, ancre) : ancreSuivante(journal, max, ancre))
 }
 
 // Un clic sur la barre d'une tâche arrêtée l'efface (avec « Disparaît après : Jamais », seul moyen).
@@ -1008,9 +1021,10 @@ function journalDe(
   p: Progression,
   instant: number,
   max: number,
+  ancre: string | null,
 ): { bloc: RenderElement; rangs: number } {
-  const { Box, Text } = $.ui.resolve(e)
-  const { lignes, plus } = lignesJournal(p, instant, max)
+  const { Box, Button, Text } = $.ui.resolve(e)
+  const { lignes, avant, apres, debut, total } = lignesJournal(p, instant, max, ancre)
   const largeur = Math.max(10, e.props.bodyColumns - 4)
   const rangees: RenderElement[] = lignes.map((l, i) => (
     <Box key={`journal-${i}`} flexDirection="row" gap={1} width="100%">
@@ -1034,18 +1048,46 @@ function journalDe(
       </Box>
     </Box>
   ))
-  const autres = plus > 1 ? `+ ${plus} actions plus anciennes` : '+ 1 action plus ancienne'
+  if (total <= max) {
+    return {
+      bloc: (
+        <Box key="progression-journal" flexDirection="column" width="100%">
+          <Text dimColor wrap="truncate-end">
+            {'─'.repeat(largeur)}
+          </Text>
+          {rangees.length > 0 ? rangees : <Text dimColor>Aucune action pour l’instant.</Text>}
+        </Box>
+      ),
+      rangs: 1 + Math.max(1, rangees.length),
+    }
+  }
+  // Plus d'actions que de place (croquis 2) : « ▲ » au-dessus, à la place du trait, et « ▼ » dessous ;
+  // la rangée du bas reste là, vide, pour que la carte garde sa hauteur.
+  const anciennes = avant > 1 ? `▲ ${avant} actions plus anciennes` : '▲ 1 action plus ancienne'
+  const recentes = apres > 1 ? `▼ ${apres} plus récentes` : '▼ 1 plus récente'
   return {
     bloc: (
       <Box key="progression-journal" flexDirection="column" width="100%">
-        <Text dimColor wrap="truncate-end">
-          {'─'.repeat(largeur)}
-        </Text>
-        {plus > 0 ? <Text dimColor>{autres}</Text> : null}
-        {rangees.length > 0 ? rangees : <Text dimColor>Aucune action pour l’instant.</Text>}
+        <Box key="journal-haut-ligne" flexDirection="row" width="100%">
+          {avant > 0 ? (
+            <Button key="journal-haut" plain dimColor label={anciennes} onPress={() => void feuilleterJournal($, max, 'avant')} />
+          ) : (
+            <Text dimColor>Début de la tâche</Text>
+          )}
+          <Box key="journal-haut-espace" flexGrow={1} />
+          <Text dimColor>{`${debut + 1}–${debut + lignes.length} sur ${total}`}</Text>
+        </Box>
+        {rangees}
+        <Box key="journal-bas-ligne" flexDirection="row" width="100%">
+          {apres > 0 ? (
+            <Button key="journal-bas" plain dimColor label={recentes} onPress={() => void feuilleterJournal($, max, 'apres')} />
+          ) : (
+            <Text> </Text>
+          )}
+        </Box>
       </Box>
     ),
-    rangs: 1 + (plus > 0 ? 1 : 0) + Math.max(1, rangees.length),
+    rangs: 2 + rangees.length,
   }
 }
 
@@ -1077,8 +1119,9 @@ async function bandeProgression(
     return { bloc: corps, rangs: 3 }
   }
   const { Box } = $.ui.resolve(e)
-  // Sous la barre (3 rangées), le trait et « + N plus anciennes » en prennent 2.
-  const journal = journalDe($, e, p, instant, Math.max(1, Math.min(r.journalLignes ?? Infinity, place - 5)))
+  // Sous la barre (3 rangées), le trait, ou « ▲ » et « ▼ », en prennent au plus 2.
+  const { value: ancre = null } = await $.state.get(journalAncre)
+  const journal = journalDe($, e, p, instant, Math.max(1, Math.min(r.journalLignes ?? Infinity, place - 5)), ancre)
   return {
     bloc: (
       <Box key="progression-ouverte" flexDirection="column" width="100%">

@@ -1,5 +1,15 @@
 # Changements
 
+## 0.7.0 — 2026-10-13
+
+### Ajouté
+- Progression, journal déplié (croquis 2, « flèches dans le journal ») : quand la tâche compte plus
+  d'actions que le « Détail » n'en montre, « ▲ N actions plus anciennes » remplace le trait
+  au-dessus du journal, avec la position à droite (« 4–6 sur 12 ») ; un clic recule d'une page, et
+  « ▼ N plus récentes », dessous, avance. La carte garde sa hauteur, la page reste en place quand de
+  nouvelles actions arrivent, et le journal revient aux dernières actions quand on le replie.
+- README : une capture du journal déplié (`docs/journal.png`).
+
 ## 0.6.1 — 2026-10-13
 
 ### Modifié
