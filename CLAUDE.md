@@ -56,6 +56,14 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   réglages gardés), affiché « Général » ; une rangée « Son » (`on` / `off`, `tester`) et une rangée
   « Croquis 👁 » (`croquis-on` / `croquis-off`). Allumé (●) quand `son || croquis`. `resume` écrit
   une ligne « Son » et une ligne « Croquis ».
+- Recharge automatique (1.0.0, demande de Dany) : `rechargeAuto` (On par défaut). Le moteur refuse
+  `$.command.run` dans `prompt.submit` (la commande attendrait le tour que le hook retient) : la
+  recharge part de `turn.complete` du fil principal, par `$.clock.after` (`rechargerSiChange`).
+  `find` (`chercherChangement`, `hooks/recharge.ts`) cherche dans le dossier des mods un fichier plus
+  récent que le marqueur de la session (`cheminMarqueur`, sous `/tmp/claude-myconfig/`), touché à
+  `session.start` et avant chaque recharge. Une recharge ne remplace que les mods changés ; quand
+  c'est MyConfig, `session.start` revient dans la nouvelle copie et `reprendreApresRecharge` relance
+  les propositions coupées (`reproposer`, remis à false par `proposer`) et la disparition de la barre.
 - Mise à jour (0.10.0, choix de Dany, Croquis 4) : rangées « Version » et « Mods » de l'onglet
   Général (`rangeesMod`). `verifierGithub` (à l'ouverture de l'onglet, au plus une fois par
   `VERIFICATION_MS`) fait `git fetch`, `rev-list --count HEAD..@{u}` et lit `plugin.json` de `@{u}`
@@ -121,7 +129,7 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
 - `.claude-plugin/plugin.json` : manifeste du mod (version, option `modele` de la Correction)
 - `hooks/register.tsx` : tous les hooks, la bande, le panneau
 - `hooks/*.ts` : fonctions pures des modules (réglages, stats, proposition, correction,
-  confirmation, croquis, mise-a-jour, progression, son, relais)
+  confirmation, croquis, mise-a-jour, progression, recharge, son, relais)
 - `types/index.d.ts` : contrat des valeurs de `$.state`
 - `sons/fin.aiff` : signal de fin
 - `tests/` : tests du mod

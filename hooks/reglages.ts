@@ -41,6 +41,7 @@ export const DESCRIPTIONS: Record<Module, string> = {
 export const DEFAUT: Reglages = {
   son: true,
   croquis: false,
+  rechargeAuto: true,
   correction: true,
   stats: true,
   proposition: true,
@@ -100,6 +101,7 @@ export function completer(valeur: unknown): Reglages {
   return {
     son: actif('son'),
     croquis: typeof v.croquis === 'boolean' ? v.croquis : DEFAUT.croquis,
+    rechargeAuto: typeof v.rechargeAuto === 'boolean' ? v.rechargeAuto : DEFAUT.rechargeAuto,
     correction: ameliorer || corriger,
     stats: actif('stats'),
     proposition: actif('proposition'),
@@ -202,7 +204,11 @@ export function resume(r: Reglages) {
   return MODULES.map(m => {
     // L'onglet Général réunit le Son et les Croquis : une ligne chacun.
     if (m === 'son') {
-      return `${'Son'.padEnd(13)}: ${onOff(r.son)}\n${'Croquis'.padEnd(13)}: ${onOff(r.croquis)}`
+      return [
+        `${'Son'.padEnd(13)}: ${onOff(r.son)}`,
+        `${'Croquis'.padEnd(13)}: ${onOff(r.croquis)}`,
+        `${'Recharge'.padEnd(13)}: ${onOff(r.rechargeAuto)}${r.rechargeAuto ? ' · à la fin de chaque tour, si un mod a changé' : ''}`,
+      ].join('\n')
     }
     const base = `${NOMS[m].padEnd(13)}: ${onOff(r[m])}`
     if (m === 'proposition') {
@@ -231,6 +237,7 @@ export const USAGE = [
   '  /myconfig proposition ligne | liste   sur une ligne, ou une par ligne',
   '  /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction',
   '  /myconfig croquis on | off        5 croquis à choisir avant toute nouvelle interface (l’œil)',
+  '  /myconfig recharge on | off       /reload-plugins à la fin d’un tour, si un mod a changé',
   '  /myconfig progression avec | sans on | off   affiche ou retire un mode de la Progression',
   '  /myconfig progression disparait 0 | 5 | 10 | 15 | jamais   secondes où la barre reste après la fin',
   '  /myconfig progression detail 3 | 6 | 9 | 12 | illimite   actions montrées dans le journal déplié',
@@ -272,6 +279,18 @@ export function appliquer(r: Reglages, args: string): Changement {
       return { erreur: `MyConfig : Croquis est à ${onOff(r.croquis)}. Ajoute « on » ou « off ».` }
     }
     return { reglages: { ...r, croquis: etatCroquis }, message: `MyConfig : Croquis à ${onOff(etatCroquis)}.` }
+  }
+
+  // « /myconfig recharge on | off » : la recharge automatique des mods au début d'un message.
+  if (/^(recharge|rechargement|recharger|reload)$/.test(sansAccents(premier))) {
+    const etatRecharge = reste.length === 1 ? lireEtat(reste[0] ?? '') : undefined
+    if (etatRecharge === undefined) {
+      return { erreur: `MyConfig : la recharge automatique est à ${onOff(r.rechargeAuto)}. Ajoute « on » ou « off ».` }
+    }
+    return {
+      reglages: { ...r, rechargeAuto: etatRecharge },
+      message: `MyConfig : recharge automatique des mods à ${onOff(etatRecharge)}.`,
+    }
   }
 
   // Le Relais n'a plus d'On / Off depuis la 0.8.0 : son bouton est dans l'onglet Stats.
