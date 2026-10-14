@@ -5,13 +5,7 @@ Mod Claude Code qui réunit en un seul mod, réglables d'un même panneau, les m
 [cap](../cap), plus un sixième module, la Confirmation. Une carte au-dessus du champ de saisie
 réunit les boutons et les chiffres ; un panneau à onglets règle chaque module.
 
-```
-╭───────────────────────────────────────────────────────────────────────────────╮
-│ ✦ [ Lance les tests ] [ Mets le README à jour ] [ Publie la version ] [ ↻ ]   │
-│                                                                               │
-│ [ ✎ Améliorer ] [ ✓ Correction ] [ Revenir ]   ◔ 34 % 68k/200k · 12 min ▾ [ ⇄ Relais ] [ ⚙ ] │
-╰───────────────────────────────────────────────────────────────────────────────╯
-```
+![La bande MyConfig au-dessus du champ de saisie, dans l'app de bureau de Claude](docs/capture.png)
 
 ## Fonctions
 
