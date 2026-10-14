@@ -146,6 +146,21 @@ describe('fonctions pures', () => {
     expect('reglages' in remis && remis.reglages).toEqual(DEFAUT)
   })
 
+  test('la Progression suit ses deux modes', () => {
+    const ancien = completer({ progression: false })
+    expect([ancien.avecListe, ancien.sansListe, ancien.progression]).toEqual([false, false, false])
+    const sansPiste = appliquer(DEFAUT, 'progression sans off')
+    expect('reglages' in sansPiste && sansPiste.reglages).toEqual({ ...DEFAUT, sansListe: false })
+    const aucun = 'reglages' in sansPiste ? appliquer(sansPiste.reglages, 'progression avec liste off') : sansPiste
+    expect('reglages' in aucun && aucun.reglages.progression).toBe(false)
+    expect('message' in aucun && aucun.message).toContain('la Progression est à Off')
+    const remis = 'reglages' in aucun ? appliquer(aucun.reglages, 'progression on') : aucun
+    expect('reglages' in remis && remis.reglages).toEqual(DEFAUT)
+    const incomplet = appliquer(DEFAUT, 'progression avec')
+    expect('erreur' in incomplet && incomplet.erreur).toContain('ajoute « on » ou « off » après « avec »')
+    expect('erreur' in appliquer(DEFAUT, 'progression avec peut-être')).toBe(true)
+  })
+
   test('les propositions suivent le nombre demandé', () => {
     expect(extraire(JSON.stringify(SUITES), 2)).toEqual(['Lance les tests', 'Ajoute un README'])
     expect(extraire('1. Lance les tests\n2) Ajoute un README', 5)).toEqual(['Lance les tests', 'Ajoute un README'])
@@ -318,7 +333,7 @@ describe('la Progression : reste après la fin', () => {
       expect((await pane.find({ type: 'Button', key: 'reste-0' }))?.props.label).toBe('Instantané')
 
       await pane.press({ key: 'reste-0' })
-      expect(await etat($)).toContain('Progression  : On · apparaît aussitôt · ferme instantanément')
+      expect(await etat($)).toContain('Progression  : On · avec liste, sans liste · apparaît aussitôt · ferme instantanément')
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
       await $.turn.start({ text: 'Migration', turnId: 't1' })
       await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
@@ -327,7 +342,7 @@ describe('la Progression : reste après la fin', () => {
       expect(await ui.find({ key: 'progression' })).toBeUndefined()
 
       await pane.press({ key: 'reste-5' })
-      expect(await etat($)).toContain('Progression  : On · apparaît aussitôt · reste 5 s')
+      expect(await etat($)).toContain('Progression  : On · avec liste, sans liste · apparaît aussitôt · reste 5 s')
       await $.turn.start({ text: 'Autre tâche', turnId: 't2' })
       await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u2', todos: TODOS })
       await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't2' })
@@ -353,7 +368,7 @@ describe('la Progression : apparaît après', () => {
         expect(await pane.find({ type: 'Button', key: `apparait-${sec}` })).toBeDefined()
       }
       await pane.press({ key: 'apparait-10' })
-      expect(await etat($)).toContain('Progression  : On · apparaît après 10 s · reste 15 s')
+      expect(await etat($)).toContain('Progression  : On · avec liste, sans liste · apparaît après 10 s · reste 15 s')
 
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
       await $.turn.start({ text: 'Migration', turnId: 't1' })
@@ -468,6 +483,40 @@ describe('la Progression sans liste dans la bande', () => {
       expect(await ui.find({ key: 'progression-piste' })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: 'Étape 4 sur 7 · Valider' })).toBeDefined()
       await ui.unmount()
+    })
+
+    test(`l’onglet Progression : Afficher remplace On / Off, chaque mode s’affiche seul (${surface})`, async ($, on) => {
+      simuler(on)
+      simulerTours(on)
+      const pane = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      await pane.press({ key: 'onglet-progression' })
+      expect(await pane.find({ key: 'on' })).toBeUndefined()
+      expect(await pane.find({ key: 'off' })).toBeUndefined()
+      expect(await pane.find({ type: 'Text', text: 'Afficher' })).toBeDefined()
+
+      // « Sans liste » seul : la piste s'affiche, la barre de la liste non.
+      await pane.press({ key: 'afficher-avec-liste' })
+      expect(await etat($)).toContain('Progression  : On · sans liste ·')
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      await $.turn.start({ text: 'Migration', turnId: 't1' })
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/x/a.md' })
+      expect(await ui.find({ key: 'progression-piste' })).toBeDefined()
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+
+      // Aucun mode : la Progression est à Off, et ses essais sont éteints.
+      await pane.press({ key: 'afficher-sans-liste' })
+      expect(await etat($)).toContain('Progression  : Off')
+      expect((await pane.find({ type: 'Button', key: 'onglet-progression' }))?.props.label).toBe('Progression ○')
+      expect((await pane.find({ type: 'Button', key: 'voir-exemple' }))?.props.dimColor).toBe(true)
+      expect((await pane.find({ type: 'Button', key: 'voir-exemple-sans-liste' }))?.props.dimColor).toBe(true)
+
+      // « Avec liste » seul : la barre de la liste revient.
+      await pane.press({ key: 'afficher-avec-liste' })
+      expect(await etat($)).toContain('Progression  : On · avec liste ·')
+      expect(await ui.find({ type: 'Text', text: 'Étape 4 sur 7 · Valider' })).toBeDefined()
+      await ui.unmount()
+      await pane.unmount()
     })
 
     test(`l’exemple sans liste du panneau passe ses 8 actions, puis s’en va (${surface})`, async ($, on) => {

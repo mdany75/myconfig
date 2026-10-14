@@ -58,6 +58,7 @@ import { consigne as consigneProposition, extraire } from './proposition'
 import {
   appliquer,
   avecBoutons,
+  avecModes,
   completer,
   DESCRIPTIONS,
   ICONES,
@@ -945,9 +946,12 @@ async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Prom
   if (p === null || !visible(p, instant, r.resteApres * 1000, r.apparaitApres * 1000)) {
     return undefined
   }
-  // Sans liste de tâches : la piste de temps des actions.
+  // Sans liste de tâches : la piste de temps des actions. Chaque mode s'affiche seulement s'il est choisi.
   if (p.etapes.length === 0) {
-    return bandePiste($, e, p, instant)
+    return r.sansListe ? bandePiste($, e, p, instant) : undefined
+  }
+  if (!r.avecListe) {
+    return undefined
   }
 
   const { Box, Text } = $.ui.resolve(e)
@@ -1253,8 +1257,15 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
         )
       }
       case 'progression':
+        // Pas d'On/Off ici : la Progression est à Off quand aucun mode n'est affiché.
         return (
           <Box key="infos" flexDirection="column" gap={1}>
+            {rangee(
+              'afficher',
+              'Afficher',
+              choix('afficher-avec-liste', '☰ Avec liste', r.avecListe, x => avecModes(x, !x.avecListe, x.sansListe), 'a'),
+              choix('afficher-sans-liste', '▬ Sans liste', r.sansListe, x => avecModes(x, x.avecListe, !x.sansListe), 's'),
+            )}
             {rangee(
               'apparait',
               'Apparaît après',
@@ -1270,15 +1281,33 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
             {rangee(
               'exemple',
               'Essai',
-              <Button key="voir-exemple" label="▶ Avec liste" onPress={() => void montrerExemple($)} />,
-              <Button key="voir-exemple-sans-liste" label="▶ Sans liste" onPress={() => void montrerExempleSansListe($)} />,
+              <Button
+                key="voir-exemple"
+                label="▶ Avec liste"
+                dimColor={!r.avecListe}
+                onPress={() => {
+                  if (r.avecListe) {
+                    void montrerExemple($)
+                  }
+                }}
+              />,
+              <Button
+                key="voir-exemple-sans-liste"
+                label="▶ Sans liste"
+                dimColor={!r.sansListe}
+                onPress={() => {
+                  if (r.sansListe) {
+                    void montrerExempleSansListe($)
+                  }
+                }}
+              />,
             )}
             <Box key="infos-texte" flexDirection="column">
               <Text dimColor>Avec liste : les étapes de la liste de tâches de Claude (TodoWrite, TaskCreate).</Text>
               <Text dimColor>Sans liste : une piste de temps, un segment par action (bleu commande, violet lecture,</Text>
               <Text dimColor>vert modification), remplie de gauche à droite jusqu’à 100 % à la fin.</Text>
               <Text dimColor>
-                {`La barre apparaît en haut de la bande ${r.apparaitApres === 0 ? 'dès qu’une liste existe' : `après ${r.apparaitApres} s de travail, si une liste existe`}, et ${r.resteApres === 0 ? 'se ferme dès la fin' : `reste ${r.resteApres} s après la fin`}.`}
+                {`La barre apparaît en haut de la bande ${r.apparaitApres === 0 ? 'dès que Claude travaille' : `après ${r.apparaitApres} s de travail`}, et ${r.resteApres === 0 ? 'se ferme dès la fin' : `reste ${r.resteApres} s après la fin`}.`}
               </Text>
               <Text dimColor>Avec liste : ● faite · ◉ en cours · ○ restante</Text>
             </Box>
@@ -1314,11 +1343,11 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
           </Box>
           <Text dimColor>{DESCRIPTIONS[choisi]}</Text>
         </Box>
-        {choisi === 'correction' ? null : etat}
+        {choisi === 'correction' || choisi === 'progression' ? null : etat}
         {await extras(choisi)}
       </Box>
       <Text dimColor>
-        {`Réglages gardés d’une session à l’autre · 1 à 7 : onglets · ${choisi === 'correction' ? 'a / c : boutons affichés' : 'o / f : On / Off'}`}
+        {`Réglages gardés d’une session à l’autre · 1 à 7 : onglets · ${choisi === 'correction' ? 'a / c : boutons affichés' : choisi === 'progression' ? 'a / s : modes affichés' : 'o / f : On / Off'}`}
       </Text>
     </Box>
   )

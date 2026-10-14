@@ -52,6 +52,9 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   de confort, pas de sécurité).
 - Correction : `correction` vaut toujours `ameliorer || corriger` (`avecBoutons` dans
   `hooks/reglages.ts`) ; son onglet n'a pas d'On/Off, seulement « Afficher ».
+- Progression : `progression` vaut toujours `avecListe || sansListe` (`avecModes` dans
+  `hooks/reglages.ts`) ; son onglet n'a pas d'On/Off, seulement « Afficher ». Un mode retiré ne
+  montre rien dans son cas (`bandeProgression`), le suivi continue.
 - Progression : les étapes viennent de TodoWrite, TaskCreate et TaskUpdate du fil principal
   (`hooks/progression.ts`, logique reprise de fil) ; visible après `apparaitApres` secondes de travail
   (0 par défaut ; une tâche finie avant ne s'affiche pas), puis `resteApres` secondes après la fin

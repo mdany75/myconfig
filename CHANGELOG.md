@@ -1,5 +1,21 @@
 # Changements
 
+## 0.5.0 — 2026-10-13
+
+### Ajouté
+- Onglet Progression : « Afficher » remplace l'État On / Off, avec deux boutons, « ☰ Avec liste »
+  (barre fine et chapelet) et « ▬ Sans liste » (piste de temps), chacun affiché ou non dans la
+  bande ; aucun des deux, et la Progression est à Off. Touches `a` et `s`. Aussi
+  `/myconfig progression avec off`, `/myconfig progression sans on`.
+
+### Modifié
+- `/myconfig progression on | off` affiche ou retire les deux modes ; un ancien réglage à Off les
+  retire tous les deux.
+- Les boutons d'essai « ▶ Avec liste » et « ▶ Sans liste » sont éteints quand leur mode est retiré.
+- `/myconfig etat` nomme les modes affichés de la Progression.
+- Description de la Progression : « L'avancement du travail : les étapes de la liste de tâches de
+  Claude, ou une piste de temps de ses actions ».
+
 ## 0.4.0 — 2026-10-13
 
 ### Ajouté

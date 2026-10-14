@@ -39,7 +39,7 @@ export const DESCRIPTIONS: Record<Module, string> = {
   stats: 'Montre à droite de la bande le contexte utilisé, en % et en jetons, et la durée de la session.',
   proposition: 'Propose des suites logiques après chaque réponse : un clic en lance une.',
   confirmation: 'Claude résume ce qu’il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit.',
-  progression: 'Les tâches : une barre fine, et un point par étape de la liste de tâches de Claude.',
+  progression: 'L’avancement du travail : les étapes de la liste de tâches de Claude, ou une piste de temps de ses actions.',
 }
 
 export const DEFAUT: Reglages = {
@@ -50,6 +50,8 @@ export const DEFAUT: Reglages = {
   proposition: true,
   confirmation: false,
   progression: true,
+  avecListe: true,
+  sansListe: true,
   ameliorer: true,
   corriger: true,
   nombre: 3,
@@ -75,6 +77,11 @@ export function avecBoutons(r: Reglages, ameliorer: boolean, corriger: boolean):
   return { ...r, ameliorer, corriger, correction: ameliorer || corriger }
 }
 
+// Les deux modes de la Progression ; elle est à On tant qu'au moins un est affiché.
+export function avecModes(r: Reglages, avecListe: boolean, sansListe: boolean): Reglages {
+  return { ...r, avecListe, sansListe, progression: avecListe || sansListe }
+}
+
 // Ce que le store rend peut venir d'une version plus ancienne, ou de rien : on complète et on borne.
 export function completer(valeur: unknown): Reglages {
   const v = typeof valeur === 'object' && valeur !== null ? (valeur as Record<string, unknown>) : {}
@@ -84,6 +91,11 @@ export function completer(valeur: unknown): Reglages {
     typeof v[cle] === 'boolean' ? (v[cle] as boolean) : v.correction === false ? false : DEFAUT[cle]
   const ameliorer = bouton('ameliorer')
   const corriger = bouton('corriger')
+  // Avant les deux modes, la Progression n'avait qu'un On/Off : il vaut pour les deux.
+  const mode = (cle: 'avecListe' | 'sansListe') =>
+    typeof v[cle] === 'boolean' ? (v[cle] as boolean) : v.progression === false ? false : DEFAUT[cle]
+  const avecListe = mode('avecListe')
+  const sansListe = mode('sansListe')
   return {
     son: actif('son'),
     relais: actif('relais'),
@@ -91,7 +103,9 @@ export function completer(valeur: unknown): Reglages {
     stats: actif('stats'),
     proposition: actif('proposition'),
     confirmation: actif('confirmation'),
-    progression: actif('progression'),
+    progression: avecListe || sansListe,
+    avecListe,
+    sansListe,
     ameliorer,
     corriger,
     nombre: typeof v.nombre === 'number' && Number.isFinite(v.nombre) ? borner(v.nombre) : DEFAUT.nombre,
@@ -160,6 +174,10 @@ export function boutonsAffiches(r: Reglages) {
   return [r.ameliorer ? 'Améliorer' : '', r.corriger ? 'Correction' : ''].filter(b => b !== '').join(', ')
 }
 
+export function modesAffiches(r: Reglages) {
+  return [r.avecListe ? 'avec liste' : '', r.sansListe ? 'sans liste' : ''].filter(m => m !== '').join(', ')
+}
+
 export function resume(r: Reglages) {
   return MODULES.map(m => {
     const base = `${NOMS[m].padEnd(13)}: ${onOff(r[m])}`
@@ -169,7 +187,7 @@ export function resume(r: Reglages) {
     if (m === 'progression' && r.progression) {
       const apparait = r.apparaitApres === 0 ? 'apparaît aussitôt' : `apparaît après ${r.apparaitApres} s`
       const reste = r.resteApres === 0 ? 'ferme instantanément' : `reste ${r.resteApres} s`
-      return `${base} · ${apparait} · ${reste}`
+      return `${base} · ${modesAffiches(r)} · ${apparait} · ${reste}`
     }
     return m === 'correction' && r.correction ? `${base} · ${boutonsAffiches(r)}` : base
   }).join('\n')
@@ -183,6 +201,7 @@ export const USAGE = [
   '  /myconfig proposition 1 à 5       nombre de propositions',
   '  /myconfig proposition ligne | liste   sur une ligne, ou une par ligne',
   '  /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction',
+  '  /myconfig progression avec | sans on | off   affiche ou retire un mode de la Progression',
   '  /myconfig progression apparait 0 à 30   secondes de travail avant que la barre apparaisse',
   '  /myconfig progression reste 0 à 30      secondes où la barre reste après la fin (0 : instantané)',
 ].join('\n')
@@ -223,9 +242,37 @@ export function appliquer(r: Reglages, args: string): Changement {
   const seul = reste.length === 1 ? (reste[0] ?? '') : undefined
   const etat = seul === undefined ? undefined : lireEtat(seul)
   if (etat !== undefined) {
-    // La Correction suit ses deux boutons : On les affiche tous les deux, Off les retire.
-    const reglages = module === 'correction' ? avecBoutons(r, etat, etat) : { ...r, [module]: etat }
+    // La Correction suit ses deux boutons, la Progression ses deux modes : On les affiche tous, Off les retire.
+    const reglages =
+      module === 'correction'
+        ? avecBoutons(r, etat, etat)
+        : module === 'progression'
+          ? avecModes(r, etat, etat)
+          : { ...r, [module]: etat }
     return { reglages, message: `MyConfig : ${NOMS[module]} à ${onOff(etat)}.` }
+  }
+  // « /myconfig progression avec off », « … sans liste on » : un mode de la Progression.
+  if (module === 'progression') {
+    const etatMode = lireEtat(reste[reste.length - 1] ?? '')
+    const mots = etatMode === undefined ? reste : reste.slice(0, -1)
+    const mot = sansAccents(mots.join(' ')).replace(/[-_]/g, ' ')
+    const cleMode = /^(avec ?(liste)?|liste)$/.test(mot)
+      ? 'avecListe'
+      : /^(sans ?(liste)?|piste)$/.test(mot)
+        ? 'sansListe'
+        : undefined
+    if (cleMode !== undefined) {
+      if (etatMode === undefined) {
+        return { erreur: `MyConfig : ajoute « on » ou « off » après « ${mots.join(' ')} ».` }
+      }
+      const nouveau =
+        cleMode === 'avecListe' ? avecModes(r, etatMode, r.sansListe) : avecModes(r, r.avecListe, etatMode)
+      const nom = cleMode === 'avecListe' ? '« Avec liste »' : '« Sans liste »'
+      return {
+        reglages: nouveau,
+        message: `MyConfig : mode ${nom} de la Progression ${etatMode ? 'affiché' : 'retiré'}${nouveau.progression ? '' : ' ; la Progression est à Off'}.`,
+      }
+    }
   }
   // « /myconfig progression apparait 10 », « … reste 5 » ; un nombre seul règle « reste ».
   if (module === 'progression') {

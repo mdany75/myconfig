@@ -13,7 +13,12 @@ export type Reglages = {
   stats: boolean
   proposition: boolean
   confirmation: boolean
+  /** Toujours `avecListe || sansListe` : la Progression est à Off quand aucun mode n'est affiché. */
   progression: boolean
+  /** Barre fine et chapelet quand Claude suit une liste de tâches. */
+  avecListe: boolean
+  /** Piste de temps des actions quand Claude n'a pas de liste de tâches. */
+  sansListe: boolean
   /** Bouton « ✎ Améliorer » affiché dans la bande. */
   ameliorer: boolean
   /** Bouton « ✓ Correction » affiché dans la bande. */

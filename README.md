@@ -17,7 +17,7 @@ réunit les boutons et les chiffres ; un panneau à onglets règle chaque module
 | **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. | On / Off |
 | **Proposition** | cap | Des suites logiques après chaque réponse ; un clic en lance une. | On / Off, 1 à 5, sur une ligne ou une par ligne ; modèle de la session |
 | **Confirmation** | — | Claude résume ce qu'il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit. | On / Off |
-| **Progression** | fil | Les tâches : une barre fine, et un point par étape de la liste de tâches de Claude ; sans liste, une piste de temps des actions. | On / Off ; apparaît après et reste après : instantané, 5 à 30 s |
+| **Progression** | fil | L'avancement du travail : une barre fine et un point par étape de la liste de tâches de Claude ; sans liste, une piste de temps des actions. | Afficher : Avec liste, Sans liste (aucun = Off) ; apparaît après et reste après : instantané, 5 à 30 s |
 
 ### La bande
 
@@ -48,17 +48,22 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
   cache), nombre (1 à 5), disposition (« Sur une ligne », « Une par ligne »), « ↻ Proposer maintenant ».
 - **Stats** : contexte, jetons et durée de la session.
 - **Confirmation** : l'état du dernier message (feu vert donné ou en attente).
-- **Progression** : « Apparaît après » (Instantané, 5 s… 30 s), le temps de travail avant que la barre
-  apparaisse ; « Reste après » (Instantané, 5 s… 30 s), le temps où elle reste après la fin ;
+- **Progression** : pas d'On / Off, mais « Afficher » : « ☰ Avec liste » et « ▬ Sans liste », chacun
+  affiché ou non dans la bande ; aucun des deux, et la Progression est à Off. « Apparaît après »
+  (Instantané, 5 s… 30 s), le temps de travail avant que la barre apparaisse ; « Reste après » (Instantané, 5 s… 30 s), le temps où elle reste après la fin ;
   « ▶ Avec liste » montre 20 secondes une tâche de 7 étapes, « ▶ Sans liste » rejoue la piste de
   temps d'une publication (8 actions).
 
 Au clavier, une fois le panneau sélectionné : `1` à `7` changent d'onglet, `o` et `f` mettent à On
-ou à Off, `a` et `c` affichent ou retirent les boutons de la Correction. Les réglages sont gardés d'une session à l'autre.
+ou à Off, `a` et `c` affichent ou retirent les boutons de la Correction, `a` et `s` les modes de la
+Progression. Les réglages sont gardés d'une session à l'autre.
 
 ### La Progression
 
-Dès que Claude tient une liste de tâches (TodoWrite, TaskCreate, TaskUpdate), un bloc apparaît
+Deux modes, chacun affiché ou non dans l'onglet Progression du panneau (« Afficher ») ; un mode
+retiré ne montre rien dans son cas, et l'autre ne prend pas sa place.
+
+**Avec liste de tâches** : dès que Claude tient une liste (TodoWrite, TaskCreate, TaskUpdate), un bloc apparaît
 en haut de la carte (variante 1, « barre fine et chapelet »), aussitôt ou après le délai choisi
 dans le panneau (« Apparaît après ») ; une tâche finie avant ce délai ne s'affiche pas :
 
@@ -93,7 +98,8 @@ Publie la version 0.3.0 de MyConfig                                ⏱ 1 min 12 
   « ✓ 8 actions · durée ».
 - Le chrono avance chaque seconde ; dessous, un point par sorte d'action avec son nombre, puis
   l'action en cours.
-- Dès que Claude crée une liste de tâches, la barre des étapes prend le relais.
+- Dès que Claude crée une liste de tâches, la barre des étapes prend le relais (si « Avec liste »
+  est affiché).
 
 ### La Confirmation
 
@@ -118,6 +124,7 @@ consigne la retient.
 /myconfig proposition 1 à 5        nombre de propositions
 /myconfig proposition ligne | liste
 /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction
+/myconfig progression avec | sans on | off   affiche ou retire un mode de la Progression
 /myconfig progression apparait 0 à 30   secondes de travail avant que la barre apparaisse
 /myconfig progression reste 0 à 30      secondes où la barre reste après la fin
 /relais [léger | dernier | purger [n]]
