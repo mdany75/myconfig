@@ -24,7 +24,6 @@ import {
 } from './correction'
 import { USAGE as USAGE_CORRECTION } from './correction'
 import {
-  AFFICHAGE_FIN_MS,
   ajouterEtape,
   appliquerTodos,
   chapelet,
@@ -52,6 +51,8 @@ import {
   NOMBRE_MAX,
   NOMBRE_MIN,
   NOMS,
+  RESTES,
+  libelleReste,
   resume,
   USAGE,
 } from './reglages'
@@ -771,7 +772,7 @@ async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Prom
   // Lu pour être redessiné quand `maintenant` avance (fin de l'affichage, durée).
   await $.state.get(maintenant)
   const instant = await $.clock.now()
-  if (p === null || !visible(p, instant)) {
+  if (p === null || !visible(p, instant, r.resteApres * 1000, r.apparaitApres * 1000)) {
     return undefined
   }
 
@@ -1081,13 +1082,27 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
         return (
           <Box key="infos" flexDirection="column" gap={1}>
             {rangee(
+              'apparait',
+              'Apparaît après',
+              ...RESTES.map(s =>
+                choix(`apparait-${s}`, libelleReste(s), r.apparaitApres === s, x => ({ ...x, apparaitApres: s })),
+              ),
+            )}
+            {rangee(
+              'reste',
+              'Reste après',
+              ...RESTES.map(s => choix(`reste-${s}`, libelleReste(s), r.resteApres === s, x => ({ ...x, resteApres: s }))),
+            )}
+            {rangee(
               'exemple',
               'Essai',
               <Button key="voir-exemple" label="▶ Voir un exemple" onPress={() => void montrerExemple($)} />,
             )}
             <Box key="infos-texte" flexDirection="column">
               <Text dimColor>Les étapes viennent de la liste de tâches de Claude (TodoWrite, TaskCreate).</Text>
-              <Text dimColor>La barre apparaît en haut de la bande dès qu’une liste existe, et reste 15 s après la fin.</Text>
+              <Text dimColor>
+                {`La barre apparaît en haut de la bande ${r.apparaitApres === 0 ? 'dès qu’une liste existe' : `après ${r.apparaitApres} s de travail, si une liste existe`}, et ${r.resteApres === 0 ? 'se ferme dès la fin' : `reste ${r.resteApres} s après la fin`}.`}
+              </Text>
               <Text dimColor>● faite · ◉ en cours · ○ restante</Text>
             </Box>
           </Box>
@@ -1282,6 +1297,11 @@ export const register: Register = (on, options) => {
     // Progression : la tâche continue si sa liste n'est pas finie, sinon une nouvelle commence.
     const { value: avant = null } = await $.state.get(progression)
     await $.state.set(progression, demarrer(avant, e.text, instant))
+    // Apparition différée : la bande se redessine quand le délai est écoulé.
+    const { apparaitApres } = await lireReglages($)
+    if (apparaitApres > 0) {
+      redessinerApres($, apparaitApres * 1000 + 200)
+    }
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -1339,10 +1359,13 @@ export const register: Register = (on, options) => {
     if (!sousAgent) {
       const fin = await $.clock.now()
       if (e.reason === 'aborted' || e.reason === 'error') {
-        await changerProgression($, p => ({ ...p, fin: fin - AFFICHAGE_FIN_MS }))
+        // Une heure plus tôt : plus longtemps que le plus long « Reste après ».
+        await changerProgression($, p => ({ ...p, fin: fin - 3_600_000 }))
       } else {
         await changerProgression($, p => ({ ...p, fin }))
-        redessinerApres($, AFFICHAGE_FIN_MS + 500)
+        if (r.resteApres > 0) {
+          redessinerApres($, r.resteApres * 1000 + 500)
+        }
       }
     }
     if (r.proposition && !sousAgent && e.reason === 'answer') {

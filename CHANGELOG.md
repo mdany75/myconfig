@@ -1,5 +1,19 @@
 # Changements
 
+## 0.3.0 — 2026-10-13
+
+### Ajouté
+- Onglet Progression : « Apparaît après », le temps de travail avant que la barre apparaisse
+  (Instantané, 5, 10, 15, 20, 25 ou 30 secondes ; instantané par défaut) ; une tâche finie avant
+  ce délai ne s'affiche pas. Aussi `/myconfig progression apparait 10`.
+- Onglet Progression : « Reste après », le temps où la barre reste après la fin de la tâche
+  (Instantané, 5, 10, 15, 20, 25 ou 30 secondes ; 15 par défaut). Aussi
+  `/myconfig progression reste 5`.
+
+### Modifié
+- Description de la Progression : « Les tâches : une barre fine, et un point par étape de la liste
+  de tâches de Claude » (elle suit les tâches découpées en étapes, quelle que soit leur durée).
+
 ## 0.2.0 — 2026-10-13
 
 ### Ajouté

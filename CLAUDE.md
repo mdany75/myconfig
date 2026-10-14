@@ -53,8 +53,9 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
 - Correction : `correction` vaut toujours `ameliorer || corriger` (`avecBoutons` dans
   `hooks/reglages.ts`) ; son onglet n'a pas d'On/Off, seulement « Afficher ».
 - Progression : les étapes viennent de TodoWrite, TaskCreate et TaskUpdate du fil principal
-  (`hooks/progression.ts`, logique reprise de fil) ; visible tant que la tâche tourne, puis
-  `AFFICHAGE_FIN_MS` (15 s). Un même événement ne prend qu'un hook sans matcher : les hooks
+  (`hooks/progression.ts`, logique reprise de fil) ; visible après `apparaitApres` secondes de travail
+  (0 par défaut ; une tâche finie avant ne s'affiche pas), puis `resteApres` secondes après la fin
+  (15 par défaut) ; choix dans `RESTES` de `hooks/reglages.ts`. Un même événement ne prend qu'un hook sans matcher : les hooks
   `tool.call` de la Progression ont chacun un matcher `{ tool }`.
 - Ne pas activer en même temps jauge, fil, fil-son, relais, plume ou cap.
 - Avant de pousser une fonctionnalité : README et CHANGELOG à jour, capture d'écran

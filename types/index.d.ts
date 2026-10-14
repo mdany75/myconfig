@@ -21,6 +21,10 @@ export type Reglages = {
   /** Nombre de propositions, de 1 à 5. */
   nombre: number
   disposition: Disposition
+  /** Secondes de travail avant que la Progression apparaisse : 0 (instantané), 5, 10… 30. */
+  apparaitApres: number
+  /** Secondes pendant lesquelles la Progression reste affichée après la fin : 0 (instantané), 5, 10… 30. */
+  resteApres: number
 }
 
 /** Une limite d'utilisation du forfait (5 heures, hebdomadaire…), telle que la dernière réponse l'a donnée. */

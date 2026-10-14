@@ -3,7 +3,7 @@
 
 import type { EtapeProgression, Progression } from '../types'
 
-/** Une tâche terminée reste dans la bande, avec sa coche ✓, ce temps-là. */
+/** Par défaut, une tâche terminée reste dans la bande, avec sa coche ✓, ce temps-là (réglable). */
 export const AFFICHAGE_FIN_MS = 15_000
 /** L'exemple du panneau reste affiché ce temps-là. */
 export const EXEMPLE_MS = 20_000
@@ -176,8 +176,16 @@ export function chapelet(p: Progression): { faits: string; courant: string; rest
   }
 }
 
-/** Visible pendant la tâche, puis AFFICHAGE_FIN_MS après sa fin ; jamais sans étapes. */
-export function visible(p: Progression | null, maintenant: number) {
+/**
+ * Visible une fois la tâche en marche depuis `apparaitMs`, puis `resteMs` après sa fin (0 : plus du
+ * tout) ; jamais sans étapes. Une tâche finie avant `apparaitMs` ne s'affiche pas du tout.
+ */
+export function visible(
+  p: Progression | null,
+  maintenant: number,
+  resteMs: number = AFFICHAGE_FIN_MS,
+  apparaitMs = 0,
+) {
   if (p === null || p.etapes.length === 0) {
     return false
   }
@@ -185,7 +193,10 @@ export function visible(p: Progression | null, maintenant: number) {
     // Une minuterie retire l'exemple après EXEMPLE_MS.
     return true
   }
-  return p.fin === null || maintenant - p.fin < AFFICHAGE_FIN_MS
+  if ((p.fin ?? maintenant) - p.debut < apparaitMs) {
+    return false
+  }
+  return p.fin === null || maintenant - p.fin < resteMs
 }
 
 /** L'exemple du panneau : 7 étapes, 3 faites, la 4e en cours. */

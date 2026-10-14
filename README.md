@@ -17,7 +17,7 @@ réunit les boutons et les chiffres ; un panneau à onglets règle chaque module
 | **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. | On / Off |
 | **Proposition** | cap | Des suites logiques après chaque réponse ; un clic en lance une. | On / Off, 1 à 5, sur une ligne ou une par ligne ; modèle de la session |
 | **Confirmation** | — | Claude résume ce qu'il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit. | On / Off |
-| **Progression** | fil | Suit les longues tâches : une barre fine, et un point par étape de la liste de tâches de Claude. | On / Off |
+| **Progression** | fil | Les tâches : une barre fine, et un point par étape de la liste de tâches de Claude. | On / Off ; apparaît après et reste après : instantané, 5 à 30 s |
 
 ### La bande
 
@@ -48,7 +48,9 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
   cache), nombre (1 à 5), disposition (« Sur une ligne », « Une par ligne »), « ↻ Proposer maintenant ».
 - **Stats** : contexte, jetons et durée de la session.
 - **Confirmation** : l'état du dernier message (feu vert donné ou en attente).
-- **Progression** : « ▶ Voir un exemple » montre 20 secondes une tâche de 7 étapes dans la bande.
+- **Progression** : « Apparaît après » (Instantané, 5 s… 30 s), le temps de travail avant que la barre
+  apparaisse ; « Reste après » (Instantané, 5 s… 30 s), le temps où elle reste après la fin ;
+  « ▶ Voir un exemple » montre 20 secondes une tâche de 7 étapes dans la bande.
 
 Au clavier, une fois le panneau sélectionné : `1` à `7` changent d'onglet, `o` et `f` mettent à On
 ou à Off, `a` et `c` affichent ou retirent les boutons de la Correction. Les réglages sont gardés d'une session à l'autre.
@@ -56,7 +58,8 @@ ou à Off, `a` et `c` affichent ou retirent les boutons de la Correction. Les r�
 ### La Progression
 
 Dès que Claude tient une liste de tâches (TodoWrite, TaskCreate, TaskUpdate), un bloc apparaît
-en haut de la carte (variante 1, « barre fine et chapelet ») :
+en haut de la carte (variante 1, « barre fine et chapelet »), aussitôt ou après le délai choisi
+dans le panneau (« Apparaît après ») ; une tâche finie avant ce délai ne s'affiche pas :
 
 ```
 Migration des presets                                        50 % · ~4 min
@@ -67,8 +70,9 @@ Migration des presets                                        50 % · ~4 min
 - Le titre est ta consigne ; à droite, le % (étapes faites, plus la moitié de celle en cours) et
   le temps restant estimé au rythme des étapes déjà faites.
 - Le chapelet : ● étape faite, ◉ étape en cours, ○ étape restante.
-- Une tâche finie passe au vert avec « ✓ 7 étapes · durée » et reste 15 secondes ; une tâche
-  interrompue disparaît aussitôt ; une liste inachevée en fin de tour reste « En pause » et
+- Une tâche finie passe au vert avec « ✓ 7 étapes · durée » et reste le temps choisi dans le
+  panneau (« Reste après » : instantané, 5, 10, 15, 20, 25 ou 30 secondes ; 15 par défaut) ; une
+  tâche interrompue disparaît aussitôt ; une liste inachevée en fin de tour reste « En pause » et
   reprend au tour suivant.
 - Seul le fil principal compte : les listes des sous-agents sont ignorées.
 
@@ -95,6 +99,8 @@ consigne la retient.
 /myconfig proposition 1 à 5        nombre de propositions
 /myconfig proposition ligne | liste
 /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction
+/myconfig progression apparait 0 à 30   secondes de travail avant que la barre apparaisse
+/myconfig progression reste 0 à 30      secondes où la barre reste après la fin
 /relais [léger | dernier | purger [n]]
 /correction <texte> | corriger <texte> | retour
 ```

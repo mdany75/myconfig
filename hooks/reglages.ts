@@ -39,7 +39,7 @@ export const DESCRIPTIONS: Record<Module, string> = {
   stats: 'Montre à droite de la bande le contexte utilisé, en % et en jetons, et la durée de la session.',
   proposition: 'Propose des suites logiques après chaque réponse : un clic en lance une.',
   confirmation: 'Claude résume ce qu’il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit.',
-  progression: 'Suit les longues tâches : une barre fine, et un point par étape de la liste de tâches de Claude.',
+  progression: 'Les tâches : une barre fine, et un point par étape de la liste de tâches de Claude.',
 }
 
 export const DEFAUT: Reglages = {
@@ -54,10 +54,17 @@ export const DEFAUT: Reglages = {
   corriger: true,
   nombre: 3,
   disposition: 'ligne',
+  apparaitApres: 0,
+  resteApres: 15,
 }
 
 export const NOMBRE_MIN = 1
 export const NOMBRE_MAX = 5
+
+/** Les choix de « Apparaît après » et « Reste après » de la Progression, en secondes ; 0 : instantané. */
+export const RESTES = [0, 5, 10, 15, 20, 25, 30] as const
+
+export const libelleReste = (s: number) => (s === 0 ? 'Instantané' : `${s} s`)
 
 export function borner(n: number) {
   return Math.min(NOMBRE_MAX, Math.max(NOMBRE_MIN, Math.round(n)))
@@ -89,6 +96,8 @@ export function completer(valeur: unknown): Reglages {
     corriger,
     nombre: typeof v.nombre === 'number' && Number.isFinite(v.nombre) ? borner(v.nombre) : DEFAUT.nombre,
     disposition: v.disposition === 'ligne' || v.disposition === 'liste' ? v.disposition : DEFAUT.disposition,
+    apparaitApres: RESTES.some(s => s === v.apparaitApres) ? (v.apparaitApres as number) : DEFAUT.apparaitApres,
+    resteApres: RESTES.some(s => s === v.resteApres) ? (v.resteApres as number) : DEFAUT.resteApres,
   }
 }
 
@@ -157,6 +166,11 @@ export function resume(r: Reglages) {
     if (m === 'proposition') {
       return `${base} · ${r.nombre} · ${libelleDisposition(r.disposition)}`
     }
+    if (m === 'progression' && r.progression) {
+      const apparait = r.apparaitApres === 0 ? 'apparaît aussitôt' : `apparaît après ${r.apparaitApres} s`
+      const reste = r.resteApres === 0 ? 'ferme instantanément' : `reste ${r.resteApres} s`
+      return `${base} · ${apparait} · ${reste}`
+    }
     return m === 'correction' && r.correction ? `${base} · ${boutonsAffiches(r)}` : base
   }).join('\n')
 }
@@ -169,6 +183,8 @@ export const USAGE = [
   '  /myconfig proposition 1 à 5       nombre de propositions',
   '  /myconfig proposition ligne | liste   sur une ligne, ou une par ligne',
   '  /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction',
+  '  /myconfig progression apparait 0 à 30   secondes de travail avant que la barre apparaisse',
+  '  /myconfig progression reste 0 à 30      secondes où la barre reste après la fin (0 : instantané)',
 ].join('\n')
 
 export type Changement = { reglages: Reglages; message: string } | { erreur: string }
@@ -210,6 +226,34 @@ export function appliquer(r: Reglages, args: string): Changement {
     // La Correction suit ses deux boutons : On les affiche tous les deux, Off les retire.
     const reglages = module === 'correction' ? avecBoutons(r, etat, etat) : { ...r, [module]: etat }
     return { reglages, message: `MyConfig : ${NOMS[module]} à ${onOff(etat)}.` }
+  }
+  // « /myconfig progression apparait 10 », « … reste 5 » ; un nombre seul règle « reste ».
+  if (module === 'progression') {
+    const [motCle = '', valeur = ''] = reste.length === 2 ? reste : ['reste', seul ?? '']
+    const cle = /^(apparait|apparition|delai)$/.test(sansAccents(motCle))
+      ? 'apparaitApres'
+      : /^(reste|restes|fin)$/.test(sansAccents(motCle))
+        ? 'resteApres'
+        : undefined
+    const secondes = /^(instantane|instantanement|aussitot|0)$/.test(sansAccents(valeur))
+      ? 0
+      : /^\d+$/.test(valeur)
+        ? Number(valeur)
+        : NaN
+    if (cle !== undefined && !Number.isNaN(secondes)) {
+      if (!RESTES.some(s => s === secondes)) {
+        return { erreur: `MyConfig : choisis ${RESTES.slice(1).join(', ')} secondes, ou 0 (instantané).` }
+      }
+      const message =
+        cle === 'apparaitApres'
+          ? secondes === 0
+            ? 'MyConfig : la Progression apparaît aussitôt.'
+            : `MyConfig : la Progression apparaît après ${secondes} s de travail.`
+          : secondes === 0
+            ? 'MyConfig : la Progression ferme instantanément après la fin.'
+            : `MyConfig : la Progression reste ${secondes} s après la fin.`
+      return { reglages: { ...r, [cle]: secondes }, message }
+    }
   }
   if (module === 'proposition') {
     if (seul !== undefined && /^\d+$/.test(seul)) {

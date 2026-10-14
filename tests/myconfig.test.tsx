@@ -199,6 +199,33 @@ describe('la Progression (fonctions pures)', () => {
     expect(majEtape(p, 'todo-6', { statut: 'deleted' }, 0).etapes).toHaveLength(6)
   })
 
+  test('« Reste après la fin » : instantané, ou 5 à 30 secondes', () => {
+    expect(DEFAUT.resteApres).toBe(15)
+    expect(completer({ resteApres: 7 }).resteApres).toBe(15)
+    const cinq = appliquer(DEFAUT, 'progression 5')
+    expect('reglages' in cinq && cinq.reglages.resteApres).toBe(5)
+    const aussitot = appliquer(DEFAUT, 'progression instantané')
+    expect('reglages' in aussitot && aussitot.reglages.resteApres).toBe(0)
+    expect('erreur' in appliquer(DEFAUT, 'progression 7')).toBe(true)
+    const apparait = appliquer(DEFAUT, 'progression apparait 10')
+    expect('reglages' in apparait && [apparait.reglages.apparaitApres, apparait.reglages.resteApres]).toEqual([10, 15])
+    const reste = appliquer(DEFAUT, 'progression reste 30')
+    expect('reglages' in reste && reste.reglages.resteApres).toBe(30)
+    expect(DEFAUT.apparaitApres).toBe(0)
+    const p = appliquerTodos(nouvelle('x', 0), TODOS, 0)
+    expect(visible({ ...p, fin: 1000 }, 1000, 0)).toBe(false)
+    expect(visible({ ...p, fin: 1000 }, 5999, 5000)).toBe(true)
+    expect(visible({ ...p, fin: 1000 }, 6000, 5000)).toBe(false)
+  })
+
+  test('« Apparaît après » : rien avant le délai, et rien pour une tâche finie avant', () => {
+    const p = appliquerTodos(nouvelle('x', 0), TODOS, 0)
+    expect(visible(p, 9_999, 15_000, 10_000)).toBe(false)
+    expect(visible(p, 10_000, 15_000, 10_000)).toBe(true)
+    expect(visible({ ...p, fin: 5_000 }, 6_000, 15_000, 10_000)).toBe(false)
+    expect(visible({ ...p, fin: 12_000 }, 13_000, 15_000, 10_000)).toBe(true)
+  })
+
   test('visible pendant la tâche, puis 15 secondes après sa fin', () => {
     const p = appliquerTodos(nouvelle('x', 0), TODOS, 0)
     expect(visible(nouvelle('sans étapes', 0), 0)).toBe(false)
@@ -265,6 +292,80 @@ describe('la Progression dans la bande', () => {
       expect(await ui.find({ key: 'progression' })).toBeUndefined()
       await pane.unmount()
       await ui.unmount()
+    })
+  }
+})
+
+describe('la Progression : reste après la fin', () => {
+  for (const surface of SURFACES) {
+    test(`le panneau règle le temps ; instantané ferme dès la fin, 5 s reste 5 s (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      simulerTours(on)
+      const pane = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      await pane.press({ key: 'onglet-progression' })
+      expect(await pane.find({ type: 'Text', text: 'Reste après' })).toBeDefined()
+      for (const sec of [0, 5, 10, 15, 20, 25, 30]) {
+        expect(await pane.find({ type: 'Button', key: `reste-${sec}` })).toBeDefined()
+      }
+      expect((await pane.find({ type: 'Button', key: 'reste-0' }))?.props.label).toBe('Instantané')
+
+      await pane.press({ key: 'reste-0' })
+      expect(await etat($)).toContain('Progression  : On · apparaît aussitôt · ferme instantanément')
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      await $.turn.start({ text: 'Migration', turnId: 't1' })
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
+      expect(await ui.find({ key: 'progression' })).toBeDefined()
+      await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't1' })
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+
+      await pane.press({ key: 'reste-5' })
+      expect(await etat($)).toContain('Progression  : On · apparaît aussitôt · reste 5 s')
+      await $.turn.start({ text: 'Autre tâche', turnId: 't2' })
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u2', todos: TODOS })
+      await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't2' })
+      await horloge.advance(4_000)
+      expect(await ui.find({ key: 'progression' })).toBeDefined()
+      await horloge.advance(2_000)
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+      await ui.unmount()
+      await pane.unmount()
+    })
+  }
+})
+
+describe('la Progression : apparaît après', () => {
+  for (const surface of SURFACES) {
+    test(`le panneau règle le délai ; la barre attend 10 s de travail (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      simulerTours(on)
+      const pane = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      await pane.press({ key: 'onglet-progression' })
+      expect(await pane.find({ type: 'Text', text: 'Apparaît après' })).toBeDefined()
+      for (const sec of [0, 5, 10, 15, 20, 25, 30]) {
+        expect(await pane.find({ type: 'Button', key: `apparait-${sec}` })).toBeDefined()
+      }
+      await pane.press({ key: 'apparait-10' })
+      expect(await etat($)).toContain('Progression  : On · apparaît après 10 s · reste 15 s')
+
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      await $.turn.start({ text: 'Migration', turnId: 't1' })
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
+      await horloge.advance(9_000)
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+      await horloge.advance(1_500)
+      expect(await ui.find({ key: 'progression' })).toBeDefined()
+
+      // Une tâche finie avant le délai ne s'affiche jamais.
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u2', todos: TODOS.map(t => ({ ...t, status: 'completed' as const })) })
+      await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't1' })
+      await horloge.advance(16_000)
+      await $.turn.start({ text: 'Vite fait', turnId: 't2' })
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u3', todos: TODOS.map(t => ({ ...t, status: 'completed' as const })) })
+      await horloge.advance(3_000)
+      await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't2' })
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+      await ui.unmount()
+      await pane.unmount()
     })
   }
 })
