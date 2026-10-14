@@ -49,7 +49,15 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 
 - **Général** (Général A, l'ancien onglet Son) : une rangée par fonction. « Son » (On / Off et
   « ▶ Tester le son ») et « Croquis 👁 » (On / Off). L'onglet est allumé (●) dès que l'un des deux
-  est à On.
+  est à On. Dessous (Croquis 4) :
+  - **Version** : le numéro du mod sur ce Mac et ce que GitHub en dit (« à jour », « → 0.9.1
+    disponible »), vérifié à l'ouverture de l'onglet, au plus une fois par 5 minutes. « ⬇ Mettre à
+    jour et recharger », foncé quand une version attend, récupère la dernière version de
+    [mdany75/myconfig](https://github.com/mdany75/myconfig) (`git pull --ff-only` dans le dossier du
+    mod), puis recharge toujours les mods. Des modifications locales pas encore sur GitHub
+    l'arrêtent : rien n'est écrasé.
+  - **Mods** : « ↻ Recharger », comme `/reload-plugins` (si le moteur refuse de la lancer, la
+    commande attend dans le champ de saisie).
 - **Correction** : pas d'On / Off, mais « Afficher » : « ✎ Améliorer » et « ✓ Correction », chacun affiché
   ou non dans la bande ; aucun des deux, et la Correction est à Off. Le modèle est rappelé dessous.
 - **Proposition** : le modèle (celui de la session : les propositions partent de la conversation en

@@ -5,6 +5,7 @@ import type { On, SessionContextUsage } from 'claude-code'
 import { estFeuVert, NOTE_ATTENTE, NOTE_FEU_VERT, REFUS, SECTION } from '../hooks/confirmation'
 import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE } from '../hooks/correction'
 import { SECTION as SECTION_CROQUIS } from '../hooks/croquis'
+import { lireVersion, messageMiseAJour, statutVersion } from '../hooks/mise-a-jour'
 import {
   actionCourante,
   appliquerTodos,
@@ -1238,4 +1239,111 @@ describe('le titre de la Progression (Titre 1)', () => {
       await ui.unmount()
     })
   }
+})
+
+describe('la mise à jour depuis GitHub (onglet Général, Croquis 4)', () => {
+  test('les fonctions : version, statut, message', () => {
+    expect(lireVersion('{"name":"myconfig","version":"0.9.0"}')).toBe('0.9.0')
+    expect(lireVersion('pas du json')).toBe(null)
+    const base = { locale: '0.9.0', distante: '0.9.0', retard: 0, verifie: 0, erreur: null }
+    expect(statutVersion(base, null)).toEqual({ texte: 'à jour', couleur: 'success', disponible: false })
+    expect(statutVersion({ ...base, distante: '0.9.1', retard: 2 }, null)).toMatchObject({ texte: '→ 0.9.1 disponible', disponible: true })
+    expect(statutVersion({ ...base, retard: 1 }, null)).toMatchObject({ texte: '→ 1 changement sur GitHub', disponible: true })
+    expect(statutVersion({ ...base, erreur: 'GitHub injoignable' }, null)).toMatchObject({ texte: 'GitHub injoignable', disponible: false })
+    expect(statutVersion(base, 'mise-a-jour')).toMatchObject({ texte: 'mise à jour…', disponible: false })
+    expect(messageMiseAJour('0.9.0', '0.9.1', true)).toBe('MyConfig : 0.9.0 → 0.9.1, rechargement des mods…')
+    expect(messageMiseAJour('0.9.0', '0.9.0', false)).toBe('MyConfig : déjà à jour (0.9.0).')
+  })
+
+  // Le dépôt du mod, simulé : `local` (git status), `retard` (changements sur GitHub), et la
+  // version que `git pull` apporte.
+  function simulerGit(on: On, monde: { local: string; retard: number; distante: string }) {
+    const appels: string[] = []
+    let version = '0.9.0'
+    let tete = 'aaa'
+    const sortie = (stdout: string, exitCode = 0) => ({
+      value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+    })
+    on('process.run', (_$, e) => {
+      const commande = e.argv.join(' ')
+      appels.push(commande)
+      if (commande === 'git status --porcelain') return sortie(monde.local)
+      if (commande === 'git rev-list --count HEAD..@{u}') return sortie(`${monde.retard}\n`)
+      if (commande === 'git show @{u}:.claude-plugin/plugin.json') return sortie(JSON.stringify({ version: monde.distante }))
+      if (commande === 'git rev-parse HEAD') return sortie(`${tete}\n`)
+      if (commande === 'git pull --ff-only --quiet') {
+        // Rien à tirer quand GitHub n'a rien de plus.
+        if (monde.retard > 0) {
+          version = monde.distante
+          tete = 'bbb'
+        }
+        return sortie('')
+      }
+      return sortie('')
+    })
+    on('fs.read', () => ({ value: JSON.stringify({ version }) }))
+    const toasts: string[] = []
+    on('ui.toast', (_$, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    const recharges: string[] = []
+    on('command.run', { command: 'reload-plugins' }, () => {
+      recharges.push('reload-plugins')
+      return { text: '' }
+    })
+    return { appels, toasts, recharges }
+  }
+
+  for (const surface of SURFACES) {
+    test(`une version plus récente : le bouton fonce, met à jour, puis recharge les mods (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      const git = simulerGit(on, { local: '', retard: 3, distante: '0.9.1' })
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      await ui.press({ key: 'onglet-son' })
+      await horloge.advance(10)
+      expect(git.appels).toContain('git fetch --quiet origin')
+      expect(await ui.find({ type: 'Text', text: '0.9.0' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '→ 0.9.1 disponible' })).toBeDefined()
+      expect((await ui.find({ type: 'Button', key: 'mettre-a-jour' }))?.props).toMatchObject({
+        label: '⬇ Mettre à jour et recharger',
+        variant: 'primary',
+      })
+      expect(await ui.find({ type: 'Button', key: 'recharger' })).toBeDefined()
+
+      await ui.press({ key: 'mettre-a-jour' })
+      await horloge.advance(10)
+      expect(git.appels).toContain('git pull --ff-only --quiet')
+      expect(git.toasts).toContain('MyConfig : 0.9.0 → 0.9.1, rechargement des mods…')
+      expect(git.recharges).toEqual(['reload-plugins'])
+      expect(await ui.find({ type: 'Text', text: 'à jour' })).toBeDefined()
+      await ui.unmount()
+    })
+  }
+
+  test('des modifications locales arrêtent la mise à jour : rien n’est tiré ni rechargé', async ($, on) => {
+    const horloge = simuler(on)
+    const git = simulerGit(on, { local: ' M hooks/register.tsx\n', retard: 1, distante: '0.9.1' })
+    const ui = await $.ui.mount({ plugin: 'myconfig', surface: 'terminal', ...panneau })
+    await ui.press({ key: 'mettre-a-jour' })
+    await horloge.advance(10)
+    expect(git.appels).not.toContain('git pull --ff-only --quiet')
+    expect(git.toasts).toEqual(['MyConfig : mise à jour annulée, des modifications locales ne sont pas sur GitHub.'])
+    expect(git.recharges).toEqual([])
+    await ui.unmount()
+  })
+
+  test('déjà à jour : pas de rechargement ; ↻ recharge les mods', async ($, on) => {
+    const horloge = simuler(on)
+    const git = simulerGit(on, { local: '', retard: 0, distante: '0.9.0' })
+    const ui = await $.ui.mount({ plugin: 'myconfig', surface: 'terminal', ...panneau })
+    await ui.press({ key: 'mettre-a-jour' })
+    await horloge.advance(10)
+    expect(git.toasts).toEqual(['MyConfig : déjà à jour (0.9.0).'])
+    expect(git.recharges).toEqual([])
+    await ui.press({ key: 'recharger' })
+    await horloge.advance(10)
+    expect(git.recharges).toEqual(['reload-plugins'])
+    await ui.unmount()
+  })
 })

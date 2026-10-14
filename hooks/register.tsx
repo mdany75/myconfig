@@ -16,6 +16,7 @@ import {
   SECTION,
 } from './confirmation'
 import { CONSIGNE as CONSIGNE_CROQUIS, SECTION as SECTION_CROQUIS } from './croquis'
+import { lireVersion, messageMiseAJour, premiereLigne, statutVersion, VERIFICATION_MS } from './mise-a-jour'
 import {
   CONSIGNE as CONSIGNE_CORRECTION,
   CONSIGNE_ORTHOGRAPHE,
@@ -143,6 +144,8 @@ const progression = { plugin: 'myconfig', key: 'progression' } as const
 const journalOuvert = { plugin: 'myconfig', key: 'journalOuvert' } as const
 const journalAncre = { plugin: 'myconfig', key: 'journalAncre' } as const
 const repartition = { plugin: 'myconfig', key: 'repartition' } as const
+const versionGithub = { plugin: 'myconfig', key: 'versionGithub' } as const
+const miseAJour = { plugin: 'myconfig', key: 'miseAJour' } as const
 const auTravail = { plugin: 'myconfig', key: 'auTravail' } as const
 
 // Les réglages dans $.store, qui survit aux sessions et à « /clear ».
@@ -213,11 +216,122 @@ async function changer($: EngineInterface, fn: (r: Reglages) => Reglages) {
 
 async function ouvrirPanneau($: EngineInterface) {
   const ouvert = await $.ui.open({ id: PANNEAU, title: TITRE })
-  if ((await $.state.get(onglet)).value === 'stats') {
+  const { value: courant = 'son' } = await $.state.get(onglet)
+  if (courant === 'stats') {
     await mesurer($)
     await mesurerRepartition($)
   }
+  if (courant === 'son') {
+    // Une minuterie survit à la fin du hook ; une promesse laissée seule, non.
+    $.clock.after(1, () => void verifierGithub($))
+  }
   return ouvert
+}
+
+// ── Mise à jour (onglet Général, Croquis 4) ─────────────────────────────────
+// Le mod est un clone de github.com/mdany75/myconfig : git travaille dans son dossier.
+
+const git = ($: EngineInterface, args: readonly string[], timeoutMs = 15_000) =>
+  $.process.run(['git', ...args], { cwd: $.plugin.root, timeoutMs })
+
+async function versionLocale($: EngineInterface) {
+  try {
+    return lireVersion(String(await $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`)))
+  } catch {
+    return null
+  }
+}
+
+// Compare le mod à GitHub : `git fetch`, puis les changements en retard et la version qu'ils
+// portent. Au plus une fois par VERIFICATION_MS, sauf après une erreur.
+async function verifierGithub($: EngineInterface) {
+  const { value: avant = null } = await $.state.get(versionGithub)
+  const instant = await $.clock.now()
+  if (avant !== null && avant.erreur === null && instant - avant.verifie < VERIFICATION_MS) {
+    return
+  }
+  if (((await $.state.get(miseAJour)).value ?? null) !== null) {
+    return
+  }
+  await $.state.set(miseAJour, 'verification')
+  const locale = await versionLocale($)
+  const etat = (erreur: string | null, retard = 0, distante: string | null = null) =>
+    $.state.set(versionGithub, { locale, distante, retard, verifie: instant, erreur })
+  try {
+    const recuperer = await git($, ['fetch', '--quiet', 'origin'])
+    if (recuperer.exitCode !== 0) {
+      await etat('GitHub injoignable')
+      return
+    }
+    const retard = await git($, ['rev-list', '--count', 'HEAD..@{u}'])
+    if (retard.exitCode !== 0) {
+      await etat('aucune branche GitHub suivie')
+      return
+    }
+    const distante = await git($, ['show', '@{u}:.claude-plugin/plugin.json'])
+    await etat(null, Number.parseInt(retard.stdout.trim(), 10) || 0, distante.exitCode === 0 ? lireVersion(distante.stdout) : null)
+  } catch {
+    await etat('vérification impossible')
+  } finally {
+    await $.state.set(miseAJour, null)
+  }
+}
+
+// ↻ : comme « /reload-plugins ». Si le moteur refuse de la lancer d'un mod, la commande attend
+// dans le champ de saisie.
+async function recharger($: EngineInterface) {
+  await $.state.set(miseAJour, 'rechargement')
+  try {
+    await $.command.run({ command: 'reload-plugins' })
+  } catch {
+    const rempli = await $.prompt.fill({ text: '/reload-plugins', mode: 'replace' }).catch(() => undefined)
+    $.ui.toast(
+      rempli?.isFilled === true
+        ? 'MyConfig : appuie sur Entrée pour recharger les mods.'
+        : 'MyConfig : tape /reload-plugins pour recharger les mods.',
+    )
+  } finally {
+    await $.state.set(miseAJour, null)
+  }
+}
+
+// ⬇ : `git pull --ff-only` dans le dossier du mod, puis, dès que quelque chose a changé, le
+// rechargement des mods, toujours. Des modifications locales arrêtent tout : rien n'est écrasé.
+async function mettreAJour($: EngineInterface) {
+  if (((await $.state.get(miseAJour)).value ?? null) !== null) {
+    return
+  }
+  await $.state.set(miseAJour, 'mise-a-jour')
+  let change = false
+  try {
+    const avant = await versionLocale($)
+    const local = await git($, ['status', '--porcelain'])
+    if (local.exitCode !== 0) {
+      $.ui.toast('MyConfig : le dossier du mod n’est pas un dépôt git ; mise à jour impossible.')
+      return
+    }
+    if (local.stdout.trim() !== '') {
+      $.ui.toast('MyConfig : mise à jour annulée, des modifications locales ne sont pas sur GitHub.')
+      return
+    }
+    const tete = (await git($, ['rev-parse', 'HEAD'])).stdout.trim()
+    const tirer = await git($, ['pull', '--ff-only', '--quiet'], 60_000)
+    if (tirer.exitCode !== 0) {
+      $.ui.toast(`MyConfig : la mise à jour a échoué (${premiereLigne(tirer.stderr) || `code ${tirer.exitCode}`}).`)
+      return
+    }
+    change = (await git($, ['rev-parse', 'HEAD'])).stdout.trim() !== tete
+    const apres = await versionLocale($)
+    $.ui.toast(messageMiseAJour(avant, apres, change))
+    await $.state.set(versionGithub, { locale: apres, distante: apres, retard: 0, verifie: await $.clock.now(), erreur: null })
+  } catch (erreur) {
+    $.ui.toast(`MyConfig : la mise à jour a échoué (${erreur instanceof Error ? erreur.message : String(erreur)}).`)
+  } finally {
+    await $.state.set(miseAJour, null)
+  }
+  if (change) {
+    await recharger($)
+  }
 }
 
 // Le bouton ⏸ / ▶ de la bande : met la Confirmation à On ou à Off. Remise à On, elle attend un
@@ -1366,6 +1480,9 @@ async function choisirOnglet($: EngineInterface, m: Module) {
     await mesurer($)
     await mesurerRepartition($)
   }
+  if (m === 'son') {
+    $.clock.after(1, () => void verifierGithub($))
+  }
 }
 
 // Le bouton Relais de l'onglet Stats : deux clics (« Confirmer ? » pendant 6 secondes), et rien
@@ -1393,6 +1510,53 @@ async function boutonRelais($: EngineInterface, e: Panneau): Promise<RenderEleme
 }
 
 type Rangee = (cle: string, titre: string, ...enfants: RenderElement[]) => RenderElement
+
+// Croquis 4 : « Version » (le numéro, ce que GitHub en dit, et un bouton qui met à jour puis
+// recharge), et « Mods » (↻ Recharger, pour des modifications faites ici).
+async function rangeesMod($: EngineInterface, e: Panneau, rangee: Rangee): Promise<RenderElement> {
+  const { Box, Button, Text } = $.ui.resolve(e)
+  const { value: g = null } = await $.state.get(versionGithub)
+  const { value: enCours = null } = await $.state.get(miseAJour)
+  const statut = statutVersion(g, enCours)
+  const occupe = enCours !== null
+  return (
+    <Box key="mod" flexDirection="column">
+      {rangee(
+        'version',
+        'Version',
+        <Text key="numero">{g?.locale ?? (await versionLocale($)) ?? '—'}</Text>,
+        <Text key="statut" color={statut.couleur}>
+          {statut.texte}
+        </Text>,
+        <Button
+          key="mettre-a-jour"
+          label="⬇ Mettre à jour et recharger"
+          variant={statut.disponible ? 'primary' : 'secondary'}
+          dimColor={occupe}
+          onPress={() => {
+            if (!occupe) {
+              $.clock.after(1, () => void mettreAJour($))
+            }
+          }}
+        />,
+      )}
+      {rangee(
+        'mods',
+        'Mods',
+        <Button
+          key="recharger"
+          label="↻ Recharger"
+          dimColor={occupe}
+          onPress={() => {
+            if (!occupe) {
+              $.clock.after(1, () => void recharger($))
+            }
+          }}
+        />,
+      )}
+    </Box>
+  )
+}
 
 // L'onglet Stats (croquis C) : cette session (contexte et son contenu, durée et coût), le forfait
 // (les limites de « /usage »), puis le Relais.
@@ -1599,6 +1763,7 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
                 choix('croquis-on', 'On', r.croquis, x => ({ ...x, croquis: true })),
                 choix('croquis-off', 'Off', !r.croquis, x => ({ ...x, croquis: false })),
               )}
+              {await rangeesMod($, e, rangee)}
             </Box>
             <Box key="infos-texte" flexDirection="column">
               <Text dimColor>Son : un signal à la fin d’une tâche d’au moins 10 secondes.</Text>

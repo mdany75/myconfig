@@ -1,5 +1,14 @@
 # Changements
 
+## 0.10.0 — 2026-10-14
+
+### Ajouté
+- Onglet Général (Croquis 4) : la rangée « Version » montre le numéro du mod et ce que GitHub en
+  dit (« à jour », « → 0.9.1 disponible »), vérifié à l'ouverture de l'onglet. « ⬇ Mettre à jour
+  et recharger » récupère la dernière version de mdany75/myconfig, puis recharge toujours les mods ;
+  des modifications locales l'arrêtent, rien n'est écrasé.
+- Onglet Général : la rangée « Mods » et son bouton « ↻ Recharger », comme `/reload-plugins`.
+
 ## 0.9.0 — 2026-10-14
 
 ### Ajouté

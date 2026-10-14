@@ -56,6 +56,14 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   réglages gardés), affiché « Général » ; une rangée « Son » (`on` / `off`, `tester`) et une rangée
   « Croquis 👁 » (`croquis-on` / `croquis-off`). Allumé (●) quand `son || croquis`. `resume` écrit
   une ligne « Son » et une ligne « Croquis ».
+- Mise à jour (0.10.0, choix de Dany, Croquis 4) : rangées « Version » et « Mods » de l'onglet
+  Général (`rangeesMod`). `verifierGithub` (à l'ouverture de l'onglet, au plus une fois par
+  `VERIFICATION_MS`) fait `git fetch`, `rev-list --count HEAD..@{u}` et lit `plugin.json` de `@{u}`
+  dans `$.plugin.root` ; le résultat va dans `versionGithub`, l'action en cours dans `miseAJour`.
+  `mettreAJour` refuse si `git status --porcelain` n'est pas vide, fait `git pull --ff-only`, puis
+  appelle toujours `recharger` quand `HEAD` a changé (demande de Dany). `recharger` lance
+  `$.command.run({ command: 'reload-plugins' })` ; s'il est refusé, `/reload-plugins` va dans le
+  champ. Les boutons passent par `$.clock.after` : une promesse laissée seule meurt avec le hook.
 - Croquis (0.9.0) : `croquis` est un réglage, pas un module (pas d'onglet à lui). À On, le hook
   `prompt.compose` (partagé avec la Confirmation : un seul hook sans matcher par événement) ajoute
   la section `myconfig:croquis` (`hooks/croquis.ts`). Dans la bande, l'œil `croquis` (Œil 2) est
@@ -113,7 +121,7 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
 - `.claude-plugin/plugin.json` : manifeste du mod (version, option `modele` de la Correction)
 - `hooks/register.tsx` : tous les hooks, la bande, le panneau
 - `hooks/*.ts` : fonctions pures des modules (réglages, stats, proposition, correction,
-  confirmation, croquis, progression, son, relais)
+  confirmation, croquis, mise-a-jour, progression, son, relais)
 - `types/index.d.ts` : contrat des valeurs de `$.state`
 - `sons/fin.aiff` : signal de fin
 - `tests/` : tests du mod

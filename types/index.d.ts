@@ -148,6 +148,23 @@ export type Progression = {
  */
 export type EtapeRelais = 'a-confirmer' | 'redaction' | 'effacement' | null
 
+/** Ce que la dernière vérification de GitHub a trouvé (onglet Général). */
+export type EtatGithub = {
+  /** La version du mod sur ce Mac (`plugin.json`). */
+  locale: string | null
+  /** La version sur GitHub (la branche suivie), si elle se lit. */
+  distante: string | null
+  /** Les changements de GitHub pas encore ici (`git rev-list --count HEAD..@{u}`). */
+  retard: number
+  /** Quand la vérification a eu lieu (millisecondes). */
+  verifie: number
+  /** Ce qui l'a empêchée, en clair ; rien quand elle a réussi. */
+  erreur: string | null
+}
+
+/** Ce que les boutons de l'onglet Général font en ce moment, ou rien. */
+export type MiseAJour = 'verification' | 'mise-a-jour' | 'rechargement' | null
+
 /** Ce que la Correction fait en ce moment : améliorer le prompt, corriger le texte, ou rien. */
 export type TravailCorrection = 'ameliorer' | 'corriger' | null
 
@@ -160,6 +177,10 @@ declare module 'claude-code' {
       onglet: Module
       /** La dernière mesure, ou rien avant la première. */
       mesure: Mesure | null
+      /** La dernière vérification de GitHub, pour la rangée « Version » de l'onglet Général. */
+      versionGithub: EtatGithub | null
+      /** La vérification, la mise à jour ou le rechargement en cours, ou rien. */
+      miseAJour: MiseAJour
       /** Le contexte par part, pour l'onglet Stats ; rien avant la première lecture. */
       repartition: PartContexte[] | null
       /** Vrai de `turn.start` à `turn.complete` : le bouton Relais du panneau attend la fin du tour. */
