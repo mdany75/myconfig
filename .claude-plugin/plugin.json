@@ -1,0 +1,22 @@
+{
+  "name": "myconfig",
+  "version": "0.1.0",
+  "description": "MyConfig : Son, Relais, Correction, Stats, Proposition et Confirmation réunis dans un seul mod, réglables d'un panneau à onglets.",
+  "author": {
+    "name": "Dany Ménard"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "modele": {
+      "type": "string",
+      "title": "Modèle de la Correction",
+      "description": "Modèle qui réécrit le prompt : sonnet (équilibré), haiku (rapide), opus (le plus soigné).",
+      "default": "sonnet",
+      "options": [
+        "sonnet",
+        "haiku",
+        "opus"
+      ]
+    }
+  }
+}
