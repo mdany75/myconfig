@@ -2,7 +2,7 @@
 
 Mod Claude Code qui réunit en un seul mod, réglables d'un même panneau, les mods
 [jauge](../jauge), [fil-son](../fil-son), [relais](../relais), [plume](../plume) et
-[cap](../cap), plus deux modules nouveaux, la Confirmation et la Progression. Une carte au-dessus du champ de saisie
+[cap](../cap), plus trois fonctions nouvelles, la Confirmation, la Progression et les Croquis. Une carte au-dessus du champ de saisie
 réunit les boutons et les chiffres ; un panneau à onglets règle chaque module.
 
 ![La bande MyConfig au-dessus du champ de saisie, dans l'app de bureau de Claude](docs/capture.png)
@@ -11,7 +11,8 @@ réunit les boutons et les chiffres ; un panneau à onglets règle chaque module
 
 | Module | Remplace | Ce qu'il fait | Réglages |
 | --- | --- | --- | --- |
-| **Son** | fil-son | Joue un son à la fin d'une tâche d'au moins 10 secondes. | On / Off |
+| **Son** | fil-son | Joue un son à la fin d'une tâche d'au moins 10 secondes. | On / Off, dans l'onglet Général |
+| **Croquis** | — | Avant de construire ou de changer une interface, Claude montre 5 croquis et attend ton choix, sans que tu le demandes. | On / Off, dans l'onglet Général ou d'un clic sur 👁 dans la bande |
 | **Relais** | relais | Récapitule la conversation dans `.relais/`, l'efface et prépare le message de reprise. | Toujours là : bouton dans l'onglet Stats du panneau, ou `/relais` |
 | **Correction** | plume | « ✎ Améliorer » reformule ta consigne en prompt structuré ; « ✓ Correction » corrige seulement le texte ; « Revenir » remet ton texte. | Afficher : Améliorer, Correction (aucun = Off) |
 | **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. Dans le panneau : le contenu du contexte, le coût, les limites et le Relais. | On / Off |
@@ -25,7 +26,9 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 
 - Les propositions en haut, côte à côte ou une par ligne, puis une ligne vide avant les boutons.
 - La Correction à gauche, puis à droite les Stats (un anneau de contexte dessiné dans l'app de
-  bureau, un quart de disque au terminal), le bouton Confirmation et ⚙, qui ouvre le panneau.
+  bureau, un quart de disque au terminal), l'œil des Croquis, le bouton Confirmation et ⚙, qui
+  ouvre le panneau.
+- L'œil (👁) : foncé quand les Croquis sont à On, normal à Off ; un clic bascule.
 - Le bouton Confirmation : « ⏸ » foncé quand la Confirmation est à On (Claude attend ton feu vert),
   « ▶ » normal à Off ; un clic bascule.
 - Couleurs des Stats : vert sous 60 %, jaune de 60 à 79 %, rouge à 80 % et plus.
@@ -33,7 +36,7 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
   les **limites d'utilisation du forfait** : limite de 5 heures et limite hebdomadaire, chacune avec
   son %, le délai avant sa remise à zéro et une barre bleue. « ↻ » les relit ; un autre clic (▴)
   les ferme. Ce sont les chiffres que la dernière réponse a rapportés.
-- Un module à Off disparaît de la bande ; le bouton Confirmation et ⚙ restent toujours.
+- Un module à Off disparaît de la bande ; l'œil, le bouton Confirmation et ⚙ restent toujours.
 - Le Relais n'est plus dans la bande, pour éviter un clic par erreur : son bouton est dans l'onglet
   Stats du panneau.
 
@@ -44,7 +47,9 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 
 ![Le panneau MyConfig, onglet Proposition](docs/panneau.png)
 
-- **Son** : bouton « ▶ Tester le son ».
+- **Général** (Général A, l'ancien onglet Son) : une rangée par fonction. « Son » (On / Off et
+  « ▶ Tester le son ») et « Croquis 👁 » (On / Off). L'onglet est allumé (●) dès que l'un des deux
+  est à On.
 - **Correction** : pas d'On / Off, mais « Afficher » : « ✎ Améliorer » et « ✓ Correction », chacun affiché
   ou non dans la bande ; aucun des deux, et la Correction est à Off. Le modèle est rappelé dessous.
 - **Proposition** : le modèle (celui de la session : les propositions partent de la conversation en
@@ -68,7 +73,7 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
   temps d'une publication (8 actions).
 
 Au clavier, une fois le panneau sélectionné : `1` à `6` changent d'onglet, `o` et `f` mettent à On
-ou à Off, `a` et `c` affichent ou retirent les boutons de la Correction, `a` et `s` les modes de la
+ou à Off (le Son, dans l'onglet Général), `a` et `c` affichent ou retirent les boutons de la Correction, `a` et `s` les modes de la
 Progression. Les réglages sont gardés d'une session à l'autre.
 
 ### La Progression
@@ -85,8 +90,12 @@ Migration des presets                                        50 % · ~4 min
 ● ● ● ◉ ○ ○ ○   Étape 4 sur 7 · Valider
 ```
 
-- Le titre est ta consigne ; à droite, le % (étapes faites, plus la moitié de celle en cours) et
-  le temps restant estimé au rythme des étapes déjà faites.
+- Le titre résume ta consigne en une ligne (Titre 1) : une consigne courte sert telle quelle ; une
+  consigne longue, ou de plusieurs lignes, est résumée par un petit modèle (Haiku) en un titre à
+  l'infinitif d'au plus 50 caractères (« Corriger 2 défauts et publier la 0.8.0 »). Ta consigne
+  s'affiche en attendant, environ une seconde, et reste le titre si le résumé échoue. À droite, le %
+  (étapes faites, plus la moitié de celle en cours) et le temps restant estimé au rythme des étapes
+  déjà faites.
 - Le chapelet : ● étape faite, ◉ étape en cours, ○ étape restante.
 - Une tâche finie passe au vert avec « ✓ 7 étapes · durée » et reste le temps choisi dans le
   panneau (« Disparaît après » : instantané, 5, 10 ou 15 secondes, 15 par défaut, ou jamais) ; un
@@ -131,6 +140,15 @@ dessous qui prend le clic.
 - Le journal garde les 200 dernières actions de la tâche ; il marche aussi avec une liste de tâches,
   sous le chapelet. Il reste déplié d'une tâche à l'autre, jusqu'au clic suivant.
 
+### Les Croquis
+
+À On (👁 foncé), une règle s'ajoute à la consigne système de Claude : avant de construire une
+nouvelle interface ou de changer l'apparence d'une interface (écran, page, panneau, bande,
+bouton, mise en page), il montre 5 croquis visuels différents, interactifs si possible, demande
+lequel tu choisis et s'arrête là. Il construit ensuite seulement le croquis choisi. Une correction
+de bogue, un texte ou un changement sans effet visible ne demande pas de croquis. Les Croquis
+sont à Off par défaut.
+
 ### La Confirmation
 
 Le bouton ⏸ / ▶ de la bande la met à On ou à Off ; remise à On, elle attend un nouveau feu vert.
@@ -152,6 +170,7 @@ consigne la retient.
 /myconfig                          ouvre le panneau
 /myconfig etat                     résume les réglages et les stats
 /myconfig <module> on | off        son, correction, stats, proposition, confirmation, progression
+/myconfig croquis on | off         5 croquis avant toute nouvelle interface (l'œil)
 /myconfig proposition 1 à 5        nombre de propositions
 /myconfig proposition ligne | liste
 /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction

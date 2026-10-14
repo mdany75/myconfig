@@ -15,6 +15,7 @@ import {
   REFUS,
   SECTION,
 } from './confirmation'
+import { CONSIGNE as CONSIGNE_CROQUIS, SECTION as SECTION_CROQUIS } from './croquis'
 import {
   CONSIGNE as CONSIGNE_CORRECTION,
   CONSIGNE_ORTHOGRAPHE,
@@ -25,7 +26,9 @@ import {
 import { USAGE as USAGE_CORRECTION } from './correction'
 import {
   actionCourante,
+  aResumer,
   ajouterEtape,
+  CONSIGNE_TITRE,
   ancrePrecedente,
   ancreSuivante,
   appliquerTodos,
@@ -35,11 +38,13 @@ import {
   decrireOutil,
   demarrer,
   duree,
+  enveloppeTitre,
   exemple,
   EXEMPLE_MS,
   EXEMPLE_SANS_LISTE,
   finirAction,
   majEtape,
+  nettoyerTitre,
   pageJournal,
   NOMS_SORTES,
   pisteSvg,
@@ -286,6 +291,26 @@ async function effacerProgression($: EngineInterface) {
 const resteMs = (r: Reglages) => (r.disparaitApres === null ? Infinity : r.disparaitApres * 1000)
 
 // ── Progression ───────────────────────────────────────────────────────────────
+
+// Titre 1 : un petit modèle (Haiku) résume la consigne en une ligne ; la consigne reste le titre
+// en attendant, et pour de bon si l'appel échoue. Une autre tâche commencée entre-temps garde le sien.
+async function resumerTitre($: EngineInterface, depuis: number, texte: string) {
+  try {
+    const reponse = await $.model.complete({
+      model: 'haiku',
+      system: CONSIGNE_TITRE,
+      prompt: enveloppeTitre(texte),
+      maxTokens: 60,
+      timeoutMs: 20_000,
+    })
+    const titre = reponse.isAnswered ? nettoyerTitre(reponse.text) : ''
+    if (titre !== '') {
+      await changerProgression($, p => (p.debut === depuis ? { ...p, titre } : p))
+    }
+  } catch {
+    // Le titre reste la consigne.
+  }
+}
 
 async function changerProgression($: EngineInterface, fn: (p: Progression) => Progression) {
   const { value: p = null } = await $.state.get(progression)
@@ -713,7 +738,8 @@ async function commandeRelais($: EngineInterface, args: string): Promise<string>
 
 // ── La bande (croquis 1, « Tableau de bord ») ────────────────────────────────
 // Une carte arrondie : les propositions en haut, la Correction à gauche,
-// les Stats, le bouton Confirmation (⏸ / ▶) et ⚙ à droite. Le Relais est dans l'onglet Stats.
+// les Stats, l'œil des Croquis, le bouton Confirmation (⏸ / ▶) et ⚙ à droite. Le Relais est dans
+// l'onglet Stats.
 
 // L'anneau de contexte : un dessin SVG là où la surface en a, un quart de disque au terminal.
 function anneauDe($: EngineInterface, e: Bande, p: number | null): RenderElement {
@@ -913,6 +939,19 @@ async function bandeLimites($: EngineInterface, e: Bande): Promise<{ bloc: Rende
     </Box>
   )
   return { bloc, rangs: 1 + Math.max(1, liste.length * 2) }
+}
+
+// L'œil de la bande (Œil 2, à gauche du ⏸ / ▶) : la fonction Croquis, foncé à On, normal à Off.
+function boutonCroquis($: EngineInterface, e: Bande, r: Reglages): RenderElement {
+  const { Button } = $.ui.resolve(e)
+  return (
+    <Button
+      key="croquis"
+      label="👁"
+      variant={r.croquis ? 'primary' : 'secondary'}
+      onPress={() => void changer($, x => ({ ...x, croquis: !x.croquis }))}
+    />
+  )
 }
 
 // Le bouton Confirmation de la bande (Bande 1) : ⏸ foncé à On, ▶ normal à Off ; un clic bascule.
@@ -1273,6 +1312,7 @@ async function bande($: EngineInterface, e: Bande, dessous: RenderElement, model
       {r.correction ? await bandeCorrection($, e, r, modele) : null}
       <Box key="espace" flexGrow={1} />
       {r.stats ? await bandeStats($, e) : null}
+      {boutonCroquis($, e, r)}
       {boutonConfirmation($, e, r)}
       <Button key="reglages" label="⚙" dimColor onPress={() => void ouvrirPanneau($)} />
     </Box>
@@ -1491,6 +1531,8 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
   const { value: garde = 'son' } = await $.state.get(onglet)
   const choisi: Module = MODULES.includes(garde) ? garde : 'stats'
   const actif = r[choisi]
+  // L'onglet Général est allumé dès que le Son ou les Croquis le sont.
+  const allume = (m: Module) => (m === 'son' ? r.son || r.croquis : r[m])
 
   // Une rangée du contenu : son libellé à gauche, ses éléments à droite.
   const rangee = (cle: string, titre: string, ...enfants: RenderElement[]) => (
@@ -1519,7 +1561,7 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
       {MODULES.map((m, i) => (
         <Button
           key={`onglet-${m}`}
-          label={`${NOMS[m]} ${r[m] ? '●' : '○'}`}
+          label={`${NOMS[m]} ${allume(m) ? '●' : '○'}`}
           hotkey={String(i + 1)}
           variant={m === choisi ? 'primary' : undefined}
           dimColor={m !== choisi}
@@ -1540,10 +1582,29 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
   async function extras(m: Module): Promise<RenderElement> {
     switch (m) {
       case 'son':
-        return rangee(
-          'essai',
-          'Essai',
-          <Button key="tester" label="▶ Tester le son" onPress={() => void $.audio.play(SON).catch(() => undefined)} />,
+        // Général A : une rangée par fonction, chacune avec son On / Off.
+        return (
+          <Box key="infos" flexDirection="column" gap={1}>
+            <Box key="fonctions" flexDirection="column">
+              {rangee(
+                'son',
+                'Son',
+                choix('on', 'On', r.son, x => ({ ...x, son: true }), 'o'),
+                choix('off', 'Off', !r.son, x => ({ ...x, son: false }), 'f'),
+                <Button key="tester" label="▶ Tester le son" onPress={() => void $.audio.play(SON).catch(() => undefined)} />,
+              )}
+              {rangee(
+                'croquis',
+                'Croquis 👁',
+                choix('croquis-on', 'On', r.croquis, x => ({ ...x, croquis: true })),
+                choix('croquis-off', 'Off', !r.croquis, x => ({ ...x, croquis: false })),
+              )}
+            </Box>
+            <Box key="infos-texte" flexDirection="column">
+              <Text dimColor>Son : un signal à la fin d’une tâche d’au moins 10 secondes.</Text>
+              <Text dimColor>Croquis : 5 croquis à choisir avant toute nouvelle interface, sans le demander.</Text>
+            </Box>
+          </Box>
         )
       case 'correction':
         // Pas d'On/Off ici : la Correction est à Off quand aucun bouton n'est affiché.
@@ -1706,15 +1767,15 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
         <Box key="titre" flexDirection="column">
           <Box key="nom" flexDirection="row" gap={1}>
             <Text bold>{`${ICONES[choisi]} ${NOMS[choisi]}`}</Text>
-            <Text color={actif ? 'success' : 'subtle'}>{actif ? '● On' : '○ Off'}</Text>
+            {choisi === 'son' ? null : <Text color={actif ? 'success' : 'subtle'}>{actif ? '● On' : '○ Off'}</Text>}
           </Box>
           <Text dimColor>{DESCRIPTIONS[choisi]}</Text>
         </Box>
-        {choisi === 'correction' || choisi === 'progression' ? null : etat}
+        {choisi === 'correction' || choisi === 'progression' || choisi === 'son' ? null : etat}
         {await extras(choisi)}
       </Box>
       <Text dimColor>
-        {`Réglages gardés d’une session à l’autre · 1 à ${MODULES.length} : onglets · ${choisi === 'correction' ? 'a / c : boutons affichés' : choisi === 'progression' ? 'a / s : modes affichés' : 'o / f : On / Off'}`}
+        {`Réglages gardés d’une session à l’autre · 1 à ${MODULES.length} : onglets · ${choisi === 'correction' ? 'a / c : boutons affichés' : choisi === 'progression' ? 'a / s : modes affichés' : choisi === 'son' ? 'o / f : Son On / Off' : 'o / f : On / Off'}`}
       </Text>
     </Box>
   )
@@ -1836,16 +1897,19 @@ export const register: Register = (on, options) => {
     return next({ ...e, context: [...(e.context ?? []), vert ? NOTE_FEU_VERT : NOTE_ATTENTE] })
   }).catch(($, e, next) => next(e))
 
-  // Confirmation : la règle du feu vert, dans la consigne système.
+  // Confirmation et Croquis : leur règle, dans la consigne système.
+  // (Un seul hook prompt.compose sans matcher est permis : les deux fonctions partagent celui-ci.)
   on('prompt.compose', async ($, e, next) => {
     const resultat = await next(e)
-    if (!(await lireReglages($)).confirmation) {
+    const r = await lireReglages($)
+    if (!r.confirmation && !r.croquis) {
       return resultat
     }
     return {
       sections: [
-        ...resultat.sections.filter(s => s.id !== SECTION),
-        { id: SECTION, text: CONSIGNE_CONFIRMATION, scope: 'session' as const },
+        ...resultat.sections.filter(s => s.id !== SECTION && s.id !== SECTION_CROQUIS),
+        ...(r.confirmation ? [{ id: SECTION, text: CONSIGNE_CONFIRMATION, scope: 'session' as const }] : []),
+        ...(r.croquis ? [{ id: SECTION_CROQUIS, text: CONSIGNE_CROQUIS, scope: 'session' as const }] : []),
       ],
     }
   }).catch(($, e, next) => next(e))
@@ -1885,7 +1949,13 @@ export const register: Register = (on, options) => {
     }
     // Progression : la tâche continue si sa liste n'est pas finie, sinon une nouvelle commence.
     const { value: avant = null } = await $.state.get(progression)
-    await $.state.set(progression, demarrer(avant, e.text, instant))
+    const tache = demarrer(avant, e.text, instant)
+    await $.state.set(progression, tache)
+    // Titre 1 : une nouvelle tâche à la consigne longue reçoit un résumé d'une ligne.
+    // Une minuterie survit à la fin du hook ; une promesse laissée seule, non.
+    if (tache.debut === instant && aResumer(e.text) && (await lireReglages($)).progression) {
+      $.clock.after(1, () => void resumerTitre($, instant, e.text))
+    }
     demarrerChrono($)
     await $.state.set(auTravail, true)
     return next(e)

@@ -1,5 +1,21 @@
 # Changements
 
+## 0.9.0 — 2026-10-14
+
+### Ajouté
+- Croquis (l'œil 👁 de la bande, Œil 2, à gauche du ⏸ / ▶) : à On, avant de construire ou de
+  changer une interface, Claude montre 5 croquis visuels, attend ton choix et ne construit que le
+  croquis choisi, sans que tu le demandes. Foncé à On, normal à Off ; à Off par défaut. Aussi
+  `/myconfig croquis on | off`.
+- Progression, Titre 1 : le titre au-dessus de la barre résume ta consigne en une ligne. Une
+  consigne longue, ou de plusieurs lignes, est résumée par un petit modèle (Haiku) ; ta consigne
+  s'affiche en attendant et reste le titre si le résumé échoue. Une consigne courte sert telle quelle.
+
+### Modifié
+- Panneau : l'onglet Son devient « Général » (Général A), avec une rangée par fonction : « Son »
+  (On / Off, « ▶ Tester le son ») et « Croquis 👁 » (On / Off).
+- Progression : un titre trop long est coupé à un mot entier, et commence par une majuscule.
+
 ## 0.8.0 — 2026-10-14
 
 ### Ajouté

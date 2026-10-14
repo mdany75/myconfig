@@ -1,7 +1,7 @@
 # CLAUDE.md — myconfig
 
 Mod Claude Code qui réunit jauge, fil-son, relais, plume et cap, avec une bande au-dessus du champ
-de saisie et un panneau de réglages à six onglets (Son, Correction, Stats, Proposition,
+de saisie et un panneau de réglages à six onglets (Général, Correction, Stats, Proposition,
 Confirmation, Progression). Le Relais n'a pas d'onglet : son bouton vit dans l'onglet Stats.
 
 Ce projet suit le standard commun des projets de Dany (`/standard-projet` le vérifie).
@@ -52,6 +52,19 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   de confort, pas de sécurité). Dans la bande, le bouton `confirmation` (choix de Dany, Bande 1) :
   « ⏸ » `primary` à On, « ▶ » `secondary` à Off ; `basculerConfirmation` remet `feuVert` à false
   quand il la remet à On.
+- Onglet Général (choix de Dany, Général A) : c'est le module `son` (sa clé ne change pas, pour les
+  réglages gardés), affiché « Général » ; une rangée « Son » (`on` / `off`, `tester`) et une rangée
+  « Croquis 👁 » (`croquis-on` / `croquis-off`). Allumé (●) quand `son || croquis`. `resume` écrit
+  une ligne « Son » et une ligne « Croquis ».
+- Croquis (0.9.0) : `croquis` est un réglage, pas un module (pas d'onglet à lui). À On, le hook
+  `prompt.compose` (partagé avec la Confirmation : un seul hook sans matcher par événement) ajoute
+  la section `myconfig:croquis` (`hooks/croquis.ts`). Dans la bande, l'œil `croquis` (Œil 2) est
+  à gauche du bouton Confirmation : « 👁 » `primary` à On, `secondary` à Off.
+- Progression, Titre 1 (choix de Dany) : `titreDe` coupe la consigne à un mot entier (`TITRE_MAX`).
+  Quand `aResumer` (plus d'une ligne, ou plus de `TITRE_COURT` caractères) et que la Progression est
+  à On, `turn.start` lance `resumerTitre` (une minuterie, sinon la promesse meurt avec le hook) :
+  `$.model.complete` avec `haiku` et `CONSIGNE_TITRE`, nettoyé par `nettoyerTitre`, posé seulement
+  si la tâche n'a pas changé (`p.debut`). Un échec garde la consigne.
 - Relais (0.8.0) : plus un module (absent de `MODULES`, de `Reglages` et de la bande) ; son bouton
   `relais` est dans l'onglet Stats (`boutonRelais`), deux clics, grisé tant que `auTravail` (posé par
   `turn.start`, retiré par `turn.complete` du fil principal). `/myconfig relais …` répond
@@ -100,7 +113,7 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
 - `.claude-plugin/plugin.json` : manifeste du mod (version, option `modele` de la Correction)
 - `hooks/register.tsx` : tous les hooks, la bande, le panneau
 - `hooks/*.ts` : fonctions pures des modules (réglages, stats, proposition, correction,
-  confirmation, son, relais)
+  confirmation, croquis, progression, son, relais)
 - `types/index.d.ts` : contrat des valeurs de `$.state`
 - `sons/fin.aiff` : signal de fin
 - `tests/` : tests du mod

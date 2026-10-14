@@ -10,6 +10,8 @@ export type Disposition = 'ligne' | 'liste'
 /** Les réglages de MyConfig, gardés d'une session à l'autre dans `$.store`. */
 export type Reglages = {
   son: boolean
+  /** Croquis (l'œil de la bande) : 5 croquis à choisir avant toute nouvelle interface. Réglé dans l'onglet Général. */
+  croquis: boolean
   /** Toujours `ameliorer || corriger` : la Correction est à Off quand aucun bouton n'est affiché. */
   correction: boolean
   stats: boolean

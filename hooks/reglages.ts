@@ -12,7 +12,7 @@ export const MODULES: readonly Module[] = [
 ]
 
 export const NOMS: Record<Module, string> = {
-  son: 'Son',
+  son: 'Général',
   correction: 'Correction',
   stats: 'Stats',
   proposition: 'Proposition',
@@ -21,7 +21,7 @@ export const NOMS: Record<Module, string> = {
 }
 
 export const ICONES: Record<Module, string> = {
-  son: '♪',
+  son: '⚙',
   correction: '✎',
   stats: '◔',
   proposition: '✦',
@@ -30,7 +30,7 @@ export const ICONES: Record<Module, string> = {
 }
 
 export const DESCRIPTIONS: Record<Module, string> = {
-  son: 'Joue un son quand une tâche d’au moins 10 secondes se termine.',
+  son: 'Le son de fin de tâche et les croquis avant une nouvelle interface.',
   correction: 'Améliore ta consigne en un prompt structuré, ou corrige seulement le texte, avant l’envoi.',
   stats: 'Le contexte utilisé à droite de la bande ; ici, son contenu, le forfait et le Relais.',
   proposition: 'Propose des suites logiques après chaque réponse : un clic en lance une.',
@@ -40,6 +40,7 @@ export const DESCRIPTIONS: Record<Module, string> = {
 
 export const DEFAUT: Reglages = {
   son: true,
+  croquis: false,
   correction: true,
   stats: true,
   proposition: true,
@@ -98,6 +99,7 @@ export function completer(valeur: unknown): Reglages {
   const sansListe = mode('sansListe')
   return {
     son: actif('son'),
+    croquis: typeof v.croquis === 'boolean' ? v.croquis : DEFAUT.croquis,
     correction: ameliorer || corriger,
     stats: actif('stats'),
     proposition: actif('proposition'),
@@ -198,6 +200,10 @@ export function modesAffiches(r: Reglages) {
 
 export function resume(r: Reglages) {
   return MODULES.map(m => {
+    // L'onglet Général réunit le Son et les Croquis : une ligne chacun.
+    if (m === 'son') {
+      return `${'Son'.padEnd(13)}: ${onOff(r.son)}\n${'Croquis'.padEnd(13)}: ${onOff(r.croquis)}`
+    }
     const base = `${NOMS[m].padEnd(13)}: ${onOff(r[m])}`
     if (m === 'proposition') {
       return `${base} · ${r.nombre} · ${libelleDisposition(r.disposition)}`
@@ -224,6 +230,7 @@ export const USAGE = [
   '  /myconfig proposition 1 à 5       nombre de propositions',
   '  /myconfig proposition ligne | liste   sur une ligne, ou une par ligne',
   '  /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction',
+  '  /myconfig croquis on | off        5 croquis à choisir avant toute nouvelle interface (l’œil)',
   '  /myconfig progression avec | sans on | off   affiche ou retire un mode de la Progression',
   '  /myconfig progression disparait 0 | 5 | 10 | 15 | jamais   secondes où la barre reste après la fin',
   '  /myconfig progression detail 3 | 6 | 9 | 12 | illimite   actions montrées dans le journal déplié',
@@ -256,6 +263,15 @@ export function appliquer(r: Reglages, args: string): Changement {
       reglages: nouveau,
       message: `MyConfig : bouton ${nom} ${etatBouton ? 'affiché' : 'retiré'}${nouveau.correction ? '' : ' ; la Correction est à Off'}.`,
     }
+  }
+
+  // « /myconfig croquis on | off » : la fonction Croquis (l'œil de la bande, onglet Général).
+  if (/^(croquis|oeil|œil|yeux)$/.test(sansAccents(premier))) {
+    const etatCroquis = reste.length === 1 ? lireEtat(reste[0] ?? '') : undefined
+    if (etatCroquis === undefined) {
+      return { erreur: `MyConfig : Croquis est à ${onOff(r.croquis)}. Ajoute « on » ou « off ».` }
+    }
+    return { reglages: { ...r, croquis: etatCroquis }, message: `MyConfig : Croquis à ${onOff(etatCroquis)}.` }
   }
 
   // Le Relais n'a plus d'On / Off depuis la 0.8.0 : son bouton est dans l'onglet Stats.

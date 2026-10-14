@@ -4,9 +4,12 @@ import type { On, SessionContextUsage } from 'claude-code'
 
 import { estFeuVert, NOTE_ATTENTE, NOTE_FEU_VERT, REFUS, SECTION } from '../hooks/confirmation'
 import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE } from '../hooks/correction'
+import { SECTION as SECTION_CROQUIS } from '../hooks/croquis'
 import {
   actionCourante,
   appliquerTodos,
+  aResumer,
+  CONSIGNE_TITRE,
   chapelet,
   compter,
   ancrePrecedente,
@@ -19,6 +22,7 @@ import {
   libelleOutil,
   lignesJournal,
   majEtape,
+  nettoyerTitre,
   nouvelle,
   pageJournal,
   rangeesTexte,
@@ -28,6 +32,7 @@ import {
   resteEstime,
   segmentsPiste,
   sorteDe,
+  titreDe,
   totalActions,
   visible,
 } from '../hooks/progression'
@@ -175,6 +180,13 @@ describe('fonctions pures', () => {
     expect(appliquer(DEFAUT, 'relais off')).toEqual({ erreur: RELAIS_TOUJOURS })
     expect(MODULES).not.toContain('relais')
     expect(completer({ relais: false })).toEqual(DEFAUT)
+    // Croquis : à Off par défaut, « /myconfig croquis on » (ou « œil ») l'allume.
+    expect(DEFAUT.croquis).toBe(false)
+    const croquis = appliquer(DEFAUT, 'croquis on')
+    expect('reglages' in croquis && croquis.reglages.croquis).toBe(true)
+    const oeil = appliquer({ ...DEFAUT, croquis: true }, 'œil off')
+    expect('reglages' in oeil && oeil.reglages.croquis).toBe(false)
+    expect('erreur' in appliquer(DEFAUT, 'croquis')).toBe(true)
   })
 
   test('la Correction suit ses deux boutons', () => {
@@ -601,6 +613,23 @@ describe('la Progression sans liste (fonctions pures)', () => {
     expect(lignesJournal(p, 20, 3, 'ailleurs')).toMatchObject({ debut: 9 })
   })
 
+  test('Titre 1 : le titre de la tâche en une ligne', () => {
+    expect(titreDe('met à jour le git')).toBe('Met à jour le git')
+    expect(titreDe('')).toBe('Suite du travail')
+    const long = titreDe('est ce que le titre ou la commande qui est affiché au dessus de la barre de progression peut-être un résumé')
+    expect(long.length).toBeLessThanOrEqual(60)
+    expect(long.endsWith('…')).toBe(true)
+    expect(long).not.toMatch(/\s…$/)
+    // Un résumé seulement pour une consigne longue, ou de plusieurs lignes.
+    expect(aResumer('met à jour le git')).toBe(false)
+    expect(aResumer('corrige les deux défauts, puis publie la version 0.8.0 de MyConfig')).toBe(true)
+    expect(aResumer('Lis ceci\npuis fais cela')).toBe(true)
+    // La réponse du modèle, ramenée à un titre propre.
+    expect(nettoyerTitre('« corriger 2 défauts et publier la 0.8.0. »')).toBe('Corriger 2 défauts et publier la 0.8.0')
+    expect(nettoyerTitre('Titre : Mettre à jour le git\n\nExplication…')).toBe('Mettre à jour le git')
+    expect(nettoyerTitre('  \n ')).toBe('')
+  })
+
   test('le titre entier : coupé aux espaces, sur autant de rangées qu’il faut', () => {
     expect(rangeesTexte('', 10)).toBe(1)
     expect(rangeesTexte('Lance les tests', 20)).toBe(1)
@@ -781,7 +810,7 @@ describe('la bande', () => {
       simuler(on)
       await etat($)
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
-      for (const key of ['myconfig', 'ameliorer', 'revenir', 'stats', 'confirmation', 'reglages']) {
+      for (const key of ['myconfig', 'ameliorer', 'revenir', 'stats', 'croquis', 'confirmation', 'reglages']) {
         expect(await ui.find({ key })).toBeDefined()
       }
       expect(await ui.find({ key: 'relais' })).toBeUndefined()
@@ -789,6 +818,19 @@ describe('la bande', () => {
       expect(await ui.find({ type: 'Text', text: /68k\/200k · 12 min/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /5h|7j/ })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: /Confirmation|Feu vert/ })).toBeUndefined()
+      await ui.unmount()
+    })
+
+    test(`l’œil des Croquis : normal à Off, foncé à On, un clic bascule (${surface})`, async ($, on) => {
+      simuler(on)
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      const bouton = async () => (await ui.find({ type: 'Button', key: 'croquis' }))?.props
+      expect(await bouton()).toMatchObject({ label: '👁', variant: 'secondary' })
+      await ui.press({ key: 'croquis' })
+      expect(await bouton()).toMatchObject({ label: '👁', variant: 'primary' })
+      expect(await etat($)).toContain('Croquis      : On')
+      await ui.press({ key: 'croquis' })
+      expect(await etat($)).toContain('Croquis      : Off')
       await ui.unmount()
     })
 
@@ -1052,6 +1094,27 @@ describe('le panneau', () => {
     })
   }
 
+  for (const surface of SURFACES) {
+    test(`l’onglet Général : le Son et les Croquis, chacun On / Off (${surface})`, async ($, on) => {
+      simuler(on)
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      expect((await ui.find({ type: 'Button', key: 'onglet-son' }))?.props.label).toBe('Général ●')
+      expect(await ui.find({ type: 'Text', text: '⚙ Général' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Croquis 👁' })).toBeDefined()
+      expect(await ui.find({ type: 'Button', key: 'tester' })).toBeDefined()
+
+      await ui.press({ key: 'croquis-on' })
+      expect(await etat($)).toContain('Croquis      : On')
+      await ui.press({ key: 'off' })
+      expect(await etat($)).toContain('Son          : Off')
+      // Le Son à Off, les Croquis à On : l'onglet reste allumé ; les deux à Off, il s'éteint.
+      expect((await ui.find({ type: 'Button', key: 'onglet-son' }))?.props.label).toBe('Général ●')
+      await ui.press({ key: 'croquis-off' })
+      expect((await ui.find({ type: 'Button', key: 'onglet-son' }))?.props.label).toBe('Général ○')
+      await ui.unmount()
+    })
+  }
+
   test('« /relais » marche sans réglage, et un ancien « relais : false » n’y change rien', async ($, on) => {
     simuler(on, [], { reglages: { ...DEFAUT, relais: false } })
     on('session.root', () => ({ value: '/tmp/projet' }))
@@ -1118,4 +1181,61 @@ describe('la Confirmation', () => {
     const ecrit = await $.tool.call({ tool: 'Write', tool_use_id: 't3', file_path: '/tmp/a.md', content: 'x' })
     expect(ecrit.result).toBe('écrit')
   })
+})
+
+describe('les Croquis', () => {
+  test('à On, la règle des croquis entre dans la consigne système, à côté de la Confirmation', async ($, on) => {
+    simuler(on)
+    on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'Bonjour', scope: 'shared' as const }] }))
+    const composer = async () =>
+      (
+        await $.prompt.compose({
+          model: 'claude-opus-5-5',
+          promptModel: 'claude-opus-5-5',
+          surfaces: [],
+          tools: [],
+          outputStyle: null,
+          traits: [],
+        })
+      ).sections.map(s => s.id)
+    expect(await composer()).toEqual(['intro'])
+    await myconfig($, 'croquis on')
+    expect(await composer()).toEqual(['intro', SECTION_CROQUIS])
+    await myconfig($, 'confirmation on')
+    expect(await composer()).toEqual(['intro', SECTION, SECTION_CROQUIS])
+    await myconfig($, 'croquis off')
+    expect(await composer()).toEqual(['intro', SECTION])
+  })
+})
+
+describe('le titre de la Progression (Titre 1)', () => {
+  for (const surface of SURFACES) {
+    test(`une consigne longue est résumée en une ligne, une courte reste telle quelle (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      simulerTours(on)
+      const appels: string[] = []
+      on('model.complete', (_$, e) => {
+        appels.push(typeof e.system === 'string' ? e.system : '')
+        return { value: { isAnswered: true as const, text: '« corriger 2 défauts et publier la 0.8.0. »', usage: USAGE } }
+      })
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+
+      await $.turn.start({ text: 'corrige les deux défauts dont on a parlé, puis publie la version 0.8.0', turnId: 't1' })
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/x/a.md' })
+      expect(await ui.find({ type: 'Text', text: /^Corrige les deux défauts/ })).toBeDefined()
+      for (let i = 0; i < 20 && (await ui.find({ type: 'Text', text: 'Corriger 2 défauts et publier la 0.8.0' })) === undefined; i++) {
+        await horloge.advance(50)
+      }
+      expect(await ui.find({ type: 'Text', text: 'Corriger 2 défauts et publier la 0.8.0' })).toBeDefined()
+      expect(appels).toEqual([CONSIGNE_TITRE])
+
+      await $.turn.complete({ reason: 'answer', answer: 'fait', durationMs: 1000, isAborted: false, turnId: 't1' })
+      await $.turn.start({ text: 'met à jour le git', turnId: 't2' })
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r2', file_path: '/x/b.md' })
+      await horloge.advance(500)
+      expect(await ui.find({ type: 'Text', text: 'Met à jour le git' })).toBeDefined()
+      expect(appels).toHaveLength(1)
+      await ui.unmount()
+    })
+  }
 })
