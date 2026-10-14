@@ -148,17 +148,6 @@ dessous qui prend le clic.
 - Le journal garde les 200 dernières actions de la tâche ; il marche aussi avec une liste de tâches,
   sous le chapelet. Il reste déplié d'une tâche à l'autre, jusqu'au clic suivant.
 
-### La recharge automatique
-
-À la fin de chaque tour de Claude, MyConfig regarde si un fichier de `~/Developer/Plugins` a changé
-depuis le dernier chargement des mods (un mod modifié pendant le tour, ou une mise à jour). Si
-oui, il lance `/reload-plugins` : ton message suivant part avec les mods à jour, sans que tu aies
-à le taper. Rien ne se passe quand rien n'a changé. Les fichiers de git, du Relais (`.relais/`) et
-les types sont ignorés. Le moteur refuse de lancer une commande pendant l'envoi d'un message :
-c'est pourquoi la recharge a lieu à la fin du tour, juste avant ton message suivant. Des
-propositions coupées par la recharge sont relancées. À On par défaut ;
-`/myconfig recharge off` l'arrête.
-
 ### Les Croquis
 
 À On (👁 foncé), une règle s'ajoute à la consigne système de Claude : avant de construire une
@@ -190,7 +179,6 @@ consigne la retient.
 /myconfig etat                     résume les réglages et les stats
 /myconfig <module> on | off        son, correction, stats, proposition, confirmation, progression
 /myconfig croquis on | off         5 croquis avant toute nouvelle interface (l'œil)
-/myconfig recharge on | off        /reload-plugins à la fin d'un tour, si un mod a changé
 /myconfig proposition 1 à 5        nombre de propositions
 /myconfig proposition ligne | liste
 /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction

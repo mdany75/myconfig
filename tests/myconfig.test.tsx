@@ -6,7 +6,6 @@ import { estFeuVert, NOTE_ATTENTE, NOTE_FEU_VERT, REFUS, SECTION } from '../hook
 import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE } from '../hooks/correction'
 import { SECTION as SECTION_CROQUIS } from '../hooks/croquis'
 import { lireVersion, messageMiseAJour, statutVersion } from '../hooks/mise-a-jour'
-import { cheminMarqueur, chercherChangement, dossierMods } from '../hooks/recharge'
 import {
   actionCourante,
   appliquerTodos,
@@ -1346,95 +1345,5 @@ describe('la mise à jour depuis GitHub (onglet Général, Croquis 4)', () => {
     await horloge.advance(10)
     expect(git.recharges).toEqual(['reload-plugins'])
     await ui.unmount()
-  })
-})
-
-describe('la recharge automatique des mods', () => {
-  test('les fonctions : marqueur, dossier des mods, recherche', () => {
-    expect(cheminMarqueur('abc-123')).toBe('/tmp/claude-myconfig/mods-abc-123')
-    expect(cheminMarqueur('a/b c')).toBe('/tmp/claude-myconfig/mods-a_b_c')
-    expect(dossierMods('/Users/dany/Developer/Plugins/myconfig')).toBe('/Users/dany/Developer/Plugins')
-    expect(dossierMods('/Users/dany/Developer/Plugins/myconfig/')).toBe('/Users/dany/Developer/Plugins')
-    const argv = chercherChangement('/Plugins', '/tmp/m')
-    expect(argv.slice(0, 2)).toEqual(['find', '/Plugins'])
-    expect(argv).toContain('-newer')
-    expect(argv.join(' ')).toContain('-name .git -o -name .relais')
-    expect(argv.at(-1)).toBe('-quit')
-    // La commande « /myconfig recharge ».
-    expect(DEFAUT.rechargeAuto).toBe(true)
-    const off = appliquer(DEFAUT, 'recharge off')
-    expect('reglages' in off && off.reglages.rechargeAuto).toBe(false)
-  })
-
-  // Le dossier des mods, simulé : `change` dit si `find` trouve un fichier plus récent que le marqueur.
-  function simulerMods(on: On, monde: { change: boolean; marqueur: boolean }) {
-    const commandes: string[] = []
-    const recharges: string[] = []
-    on('session.id', () => ({ value: 'session-1' }))
-    on('process.run', (_$, e) => {
-      commandes.push(e.argv[0] ?? '')
-      if (e.argv[0] === 'touch') {
-        monde.marqueur = true
-        monde.change = false
-      }
-      const trouve = e.argv[0] === 'find' && monde.change ? '/Plugins/myconfig/hooks/register.tsx\n' : ''
-      const exitCode = e.argv[0] === 'find' && !monde.marqueur ? 1 : 0
-      return { value: { exitCode, stdout: trouve, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
-    })
-    on('command.run', { command: 'reload-plugins' }, () => {
-      recharges.push('reload-plugins')
-      return { text: '' }
-    })
-    return { commandes, recharges }
-  }
-
-  const finir = ($: Engine, agentId?: string) =>
-    $.turn.complete({
-      reason: 'answer',
-      answer: 'fait',
-      durationMs: 1000,
-      isAborted: false,
-      turnId: 't1',
-      ...(agentId === undefined ? {} : { agentId }),
-    })
-
-  test('un mod a changé pendant le tour : « /reload-plugins » à la fin, une seule fois', async ($, on) => {
-    const horloge = simuler(on)
-    const mods = simulerMods(on, { change: true, marqueur: true })
-    // Le message lui-même ne recharge rien : le moteur refuse une commande dans prompt.submit.
-    await $.prompt.submit({ text: 'Ajoute un bouton', origin: { kind: 'composer' }, wait: false })
-    expect(mods.recharges).toEqual([])
-    await finir($)
-    await horloge.advance(100)
-    expect(mods.recharges).toEqual(['reload-plugins'])
-    // Le marqueur est posé avant la recharge : le tour suivant ne recharge plus.
-    expect(mods.commandes.indexOf('touch')).toBeGreaterThan(mods.commandes.indexOf('find'))
-    await finir($)
-    await horloge.advance(100)
-    expect(mods.recharges).toEqual(['reload-plugins'])
-  })
-
-  test('rien n’a changé, ou pas encore de marqueur : pas de recharge', async ($, on) => {
-    const horloge = simuler(on)
-    const mods = simulerMods(on, { change: false, marqueur: false })
-    await finir($)
-    await horloge.advance(100)
-    expect(mods.commandes).toContain('touch')
-    await finir($)
-    await horloge.advance(100)
-    expect(mods.recharges).toEqual([])
-  })
-
-  test('à Off, ou à la fin du tour d’un sous-agent, pas de recharge', async ($, on) => {
-    const horloge = simuler(on)
-    const mods = simulerMods(on, { change: true, marqueur: true })
-    await finir($, 'agent-1')
-    await horloge.advance(100)
-    expect(mods.recharges).toEqual([])
-    await myconfig($, 'recharge off')
-    await finir($)
-    await horloge.advance(100)
-    expect(mods.recharges).toEqual([])
-    expect(await etat($)).toContain('Recharge     : Off')
   })
 })

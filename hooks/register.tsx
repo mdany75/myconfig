@@ -17,7 +17,6 @@ import {
 } from './confirmation'
 import { CONSIGNE as CONSIGNE_CROQUIS, SECTION as SECTION_CROQUIS } from './croquis'
 import { lireVersion, messageMiseAJour, premiereLigne, statutVersion, VERIFICATION_MS } from './mise-a-jour'
-import { cheminMarqueur, chercherChangement, dossierMods } from './recharge'
 import {
   CONSIGNE as CONSIGNE_CORRECTION,
   CONSIGNE_ORTHOGRAPHE,
@@ -147,7 +146,6 @@ const journalAncre = { plugin: 'myconfig', key: 'journalAncre' } as const
 const repartition = { plugin: 'myconfig', key: 'repartition' } as const
 const versionGithub = { plugin: 'myconfig', key: 'versionGithub' } as const
 const miseAJour = { plugin: 'myconfig', key: 'miseAJour' } as const
-const reproposer = { plugin: 'myconfig', key: 'reproposer' } as const
 const auTravail = { plugin: 'myconfig', key: 'auTravail' } as const
 
 // Les réglages dans $.store, qui survit aux sessions et à « /clear ».
@@ -294,60 +292,6 @@ async function recharger($: EngineInterface) {
     )
   } finally {
     await $.state.set(miseAJour, null)
-  }
-}
-
-// ── Recharge automatique ────────────────────────────────────────────────────
-// À la fin de chaque tour : « /reload-plugins » quand un fichier du dossier des mods a changé
-// depuis leur dernier chargement (marqueur par session, `touch` à chaque chargement). Le message
-// suivant part ainsi avec les mods à jour. (Le moteur refuse `$.command.run` dans `prompt.submit` :
-// la commande attendrait le tour que le hook retient.)
-
-async function marquerCharges($: EngineInterface) {
-  const marqueur = cheminMarqueur(await $.session.id())
-  await $.process.run(['mkdir', '-p', marqueur.slice(0, marqueur.lastIndexOf('/'))], { timeoutMs: 3000 })
-  await $.process.run(['touch', marqueur], { timeoutMs: 3000 })
-}
-
-// Après une recharge de MyConfig, la nouvelle copie reprend ce que l'ancienne laissait en route :
-// les propositions coupées, et la disparition de la barre d'une tâche finie.
-async function reprendreApresRecharge($: EngineInterface) {
-  const r = await lireReglages($)
-  if ((await $.state.get(reproposer)).value === true) {
-    await $.state.set(reproposer, false)
-    if (r.proposition) {
-      $.clock.after(1, () => void proposer($, r.nombre, r.disposition))
-    }
-  }
-  const { value: p = null } = await $.state.get(progression)
-  if (p !== null && p.fin !== null && r.disparaitApres !== null && r.disparaitApres > 0) {
-    const reste = p.fin + r.disparaitApres * 1000 - (await $.clock.now())
-    if (reste > 0) {
-      redessinerApres($, reste + 500)
-    }
-  }
-}
-
-async function rechargerSiChange($: EngineInterface) {
-  try {
-    const marqueur = cheminMarqueur(await $.session.id())
-    const r = await $.process.run(chercherChangement(dossierMods($.plugin.root), marqueur), { timeoutMs: 3000 })
-    // Pas encore de marqueur : les mods viennent d'être chargés tels quels.
-    if (r.exitCode !== 0 || r.stdout.trim() === '') {
-      if (r.exitCode !== 0) {
-        await marquerCharges($)
-      }
-      return
-    }
-    // Le marqueur d'abord : un fichier enregistré pendant la recharge en demande une autre.
-    await marquerCharges($)
-    // Des propositions en cours mourraient avec cette copie de MyConfig : la nouvelle les relance.
-    if ((await $.state.get(suitesEnCours)).value === true) {
-      await $.state.set(reproposer, true)
-    }
-    await $.command.run({ command: 'reload-plugins' })
-  } catch {
-    // Sans recharge, le message part quand même.
   }
 }
 
@@ -610,8 +554,6 @@ async function proposer($: EngineInterface, nombre: number, disposition: Disposi
     if (numero === generation) {
       await $.state.set(suitesEnCours, false)
     }
-    // Finies ici : une recharge n'a pas à les relancer.
-    await $.state.set(reproposer, false)
   }
 }
 
@@ -2028,9 +1970,6 @@ export const register: Register = (on, options) => {
     await $.state.set(reglages, completer(await $.store.get(CLE_REGLAGES)))
     const resultat = await next(e)
     await mesurer($)
-    // Les mods viennent d'être chargés : la recharge automatique part de maintenant.
-    await marquerCharges($).catch(() => undefined)
-    await reprendreApresRecharge($)
     return resultat
   })
 
@@ -2255,10 +2194,6 @@ export const register: Register = (on, options) => {
     if (r.proposition && !sousAgent && e.reason === 'answer') {
       // Une minuterie survit à la fin du hook ; une promesse laissée seule, non.
       $.clock.after(1, () => void proposer($, r.nombre, r.disposition))
-    }
-    // Les mods ont changé pendant le tour (ou depuis) : rechargés avant le message suivant.
-    if (r.rechargeAuto && !sousAgent) {
-      $.clock.after(20, () => void rechargerSiChange($))
     }
     return resultat
   }).catch(($, e, next) => next(e))

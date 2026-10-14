@@ -12,8 +12,6 @@ export type Reglages = {
   son: boolean
   /** Croquis (l'œil de la bande) : 5 croquis à choisir avant toute nouvelle interface. Réglé dans l'onglet Général. */
   croquis: boolean
-  /** À la fin de chaque tour, « /reload-plugins » quand un mod a changé depuis son chargement. */
-  rechargeAuto: boolean
   /** Toujours `ameliorer || corriger` : la Correction est à Off quand aucun bouton n'est affiché. */
   correction: boolean
   stats: boolean
@@ -183,8 +181,6 @@ declare module 'claude-code' {
       versionGithub: EtatGithub | null
       /** La vérification, la mise à jour ou le rechargement en cours, ou rien. */
       miseAJour: MiseAJour
-      /** Vrai quand une recharge a coupé les propositions en cours : la nouvelle copie les relance. */
-      reproposer: boolean
       /** Le contexte par part, pour l'onglet Stats ; rien avant la première lecture. */
       repartition: PartContexte[] | null
       /** Vrai de `turn.start` à `turn.complete` : le bouton Relais du panneau attend la fin du tour. */

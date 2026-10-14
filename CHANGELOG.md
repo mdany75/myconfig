@@ -4,12 +4,8 @@
 
 Première version stable : la bande (Correction, Stats, l'œil des Croquis, la Confirmation, ⚙) et
 le panneau à six onglets (Général, Correction, Stats, Proposition, Confirmation, Progression).
-
-### Ajouté
-- Recharge automatique : à la fin de chaque tour, si un fichier de `~/Developer/Plugins` a changé
-  depuis le dernier chargement des mods, MyConfig lance `/reload-plugins` ; le message suivant
-  part avec les mods à jour. Rien ne se passe quand rien n'a changé. Des propositions coupées par
-  la recharge sont relancées. À On par défaut ; `/myconfig recharge on | off`.
+Le contenu est celui de la 0.10.0 ; la recharge automatique des mods, essayée un moment sous ce
+numéro, est retirée.
 
 ## 0.10.0 — 2026-10-14
 
