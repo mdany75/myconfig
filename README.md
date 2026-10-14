@@ -17,7 +17,7 @@ réunit les boutons et les chiffres ; un panneau à onglets règle chaque module
 | **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. | On / Off |
 | **Proposition** | cap | Des suites logiques après chaque réponse ; un clic en lance une. | On / Off, 1 à 5, sur une ligne ou une par ligne ; modèle de la session |
 | **Confirmation** | — | Claude résume ce qu'il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit. | On / Off |
-| **Progression** | fil | Les tâches : une barre fine, et un point par étape de la liste de tâches de Claude. | On / Off ; apparaît après et reste après : instantané, 5 à 30 s |
+| **Progression** | fil | Les tâches : une barre fine, et un point par étape de la liste de tâches de Claude ; sans liste, une piste de temps des actions. | On / Off ; apparaît après et reste après : instantané, 5 à 30 s |
 
 ### La bande
 
@@ -50,7 +50,8 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 - **Confirmation** : l'état du dernier message (feu vert donné ou en attente).
 - **Progression** : « Apparaît après » (Instantané, 5 s… 30 s), le temps de travail avant que la barre
   apparaisse ; « Reste après » (Instantané, 5 s… 30 s), le temps où elle reste après la fin ;
-  « ▶ Voir un exemple » montre 20 secondes une tâche de 7 étapes dans la bande.
+  « ▶ Avec liste » montre 20 secondes une tâche de 7 étapes, « ▶ Sans liste » rejoue la piste de
+  temps d'une publication (8 actions).
 
 Au clavier, une fois le panneau sélectionné : `1` à `7` changent d'onglet, `o` et `f` mettent à On
 ou à Off, `a` et `c` affichent ou retirent les boutons de la Correction. Les réglages sont gardés d'une session à l'autre.
@@ -75,6 +76,24 @@ Migration des presets                                        50 % · ~4 min
   tâche interrompue disparaît aussitôt ; une liste inachevée en fin de tour reste « En pause » et
   reprend au tour suivant.
 - Seul le fil principal compte : les listes des sous-agents sont ignorées.
+
+**Sans liste de tâches** (croquis 3, « piste de temps »), dès que Claude agit (commande, lecture,
+modification…), la piste suit ses actions :
+
+```
+Publie la version 0.3.0 de MyConfig                                ⏱ 1 min 12 s
+███████▓▓▓▓▓▓▓▓▓▓▓▓▓████████████████████▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+●  Bash ×3   ●  Lecture ×2   ●  Modif. ×1          En cours : Bash · Commit, push…
+```
+
+- Un segment par suite d'actions de même sorte, aussi long qu'elles ont duré : bleu pour les
+  commandes, violet pour les lectures, vert pour les modifications, gris pour le reste.
+- La piste se remplit de gauche à droite, de plus en plus lentement (la durée totale n'est pas
+  connue d'avance), et atteint 100 % quand la tâche se termine : tout passe alors au vert, avec
+  « ✓ 8 actions · durée ».
+- Le chrono avance chaque seconde ; dessous, un point par sorte d'action avec son nombre, puis
+  l'action en cours.
+- Dès que Claude crée une liste de tâches, la barre des étapes prend le relais.
 
 ### La Confirmation
 

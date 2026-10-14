@@ -1,5 +1,16 @@
 # Changements
 
+## 0.4.0 — 2026-10-13
+
+### Ajouté
+- Progression sans liste de tâches (croquis 3, « piste de temps ») : chaque action de Claude
+  (commande, lecture, modification…) ajoute à la piste un segment coloré aussi long qu'elle a duré ;
+  la piste se remplit de gauche à droite et atteint 100 % à la fin de la tâche, en vert, avec
+  « ✓ N actions · durée ». Le chrono avance chaque seconde ; dessous, un point par sorte d'action
+  et l'action en cours.
+- Onglet Progression : « ▶ Sans liste » rejoue la piste d'une publication ; l'ancien exemple
+  devient « ▶ Avec liste ».
+
 ## 0.3.0 — 2026-10-13
 
 ### Ajouté

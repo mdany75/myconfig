@@ -4,7 +4,7 @@
 
 import type { EngineInterface, RenderElement, RenderInput, Register } from 'claude-code'
 
-import type { Disposition, Module, Progression, Reglages, TravailCorrection } from '../types'
+import type { Disposition, Module, Progression, Reglages, SorteAction, TravailCorrection } from '../types'
 import {
   CONSIGNE as CONSIGNE_CONFIRMATION,
   estDeLUtilisateur,
@@ -24,18 +24,33 @@ import {
 } from './correction'
 import { USAGE as USAGE_CORRECTION } from './correction'
 import {
+  actionCourante,
   ajouterEtape,
   appliquerTodos,
   chapelet,
   compter,
+  debuterAction,
   demarrer,
   duree,
   exemple,
   EXEMPLE_MS,
+  EXEMPLE_SANS_LISTE,
+  finirAction,
+  libelleOutil,
   majEtape,
+  NOMS_SORTES,
+  pisteSvg,
   pourcentage,
+  remplissagePiste,
+  repartir,
   resteEstime,
+  segmentsPiste,
+  sorteDe,
+  suivre,
+  TEINTES_SORTES,
   terminee,
+  totalActions,
+  VERT_FIN,
   visible,
 } from './progression'
 import type { Todo } from './progression'
@@ -134,6 +149,10 @@ let debut: number | null = null
 let generation = 0
 // Un seul relais à la fois, même si deux appels partent avant que l'état soit écrit.
 let relaisEnCours = false
+// Progression : le chrono qui fait avancer la piste chaque seconde pendant le travail.
+let chrono: { cancel: () => unknown } | undefined
+// Progression : seul le dernier exemple lancé du panneau compte.
+let exempleGeneration = 0
 
 type Bande = RenderInput<'AbovePrompt'>
 type Panneau = RenderInput<'Pane'>
@@ -205,17 +224,89 @@ function redessinerApres($: EngineInterface, ms: number) {
   })
 }
 
+// Pendant le travail, `maintenant` avance chaque seconde : le chrono et la piste se redessinent.
+function demarrerChrono($: EngineInterface) {
+  if (chrono === undefined) {
+    chrono = $.clock.every(1000, async () => {
+      await $.state.set(maintenant, await $.clock.now())
+    })
+  }
+}
+
+function arreterChrono() {
+  chrono?.cancel()
+  chrono = undefined
+}
+
+const tacheEnCours = (p: Progression | null) =>
+  p !== null && !p.exemple && p.fin === null && (p.etapes.length > 0 || (p.blocs ?? []).length > 0)
+
 // L'exemple du panneau : 20 secondes, sans toucher à une vraie tâche en cours.
 async function montrerExemple($: EngineInterface) {
   const { value: p = null } = await $.state.get(progression)
-  if (p !== null && !p.exemple && p.fin === null && p.etapes.length > 0) {
+  if (tacheEnCours(p)) {
     $.ui.toast('Progression : une vraie tâche est en cours, l’exemple attendra.')
     return
   }
+  exempleGeneration++
   await $.state.set(progression, exemple(await $.clock.now()))
   $.clock.after(EXEMPLE_MS, () => {
     void (async () => {
       if ((await $.state.get(progression)).value?.exemple === true) {
+        await $.state.set(progression, null)
+      }
+    })()
+  })
+}
+
+// Une étape de l'exemple sans liste ; ignorée si un autre exemple ou une vraie tâche a pris la place.
+async function changerExemple($: EngineInterface, numero: number, fn: (p: Progression, instant: number) => Progression) {
+  if (numero !== exempleGeneration) {
+    return
+  }
+  const { value: p = null } = await $.state.get(progression)
+  if (p !== null && p.exemple) {
+    await $.state.set(progression, fn(p, await $.clock.now()))
+  }
+}
+
+// L'exemple sans liste : les actions d'une publication passent une à une sur la piste.
+async function montrerExempleSansListe($: EngineInterface) {
+  const { value: p = null } = await $.state.get(progression)
+  if (tacheEnCours(p)) {
+    $.ui.toast('Progression : une vraie tâche est en cours, l’exemple attendra.')
+    return
+  }
+  const numero = ++exempleGeneration
+  const debut = await $.clock.now()
+  await $.state.set(progression, {
+    titre: 'Publie la version 0.3.0 (exemple)',
+    debut,
+    fin: null,
+    etapes: [],
+    exemple: true,
+    blocs: [],
+    comptes: {},
+  })
+  demarrerChrono($)
+  let t = 0
+  for (const [i, action] of EXEMPLE_SANS_LISTE.entries()) {
+    const id = `exemple-${i}`
+    const sorte = sorteDe(action.outil)
+    $.clock.after(t, () => void changerExemple($, numero, (x, instant) => debuterAction(x, id, sorte, action.titre, instant)))
+    t += action.ms
+    $.clock.after(t, () => void changerExemple($, numero, (x, instant) => finirAction(x, id, instant)))
+  }
+  $.clock.after(t + 50, () => {
+    void (async () => {
+      await changerExemple($, numero, (x, instant) => ({ ...x, fin: instant }))
+      arreterChrono()
+    })()
+  })
+  const { resteApres } = await lireReglages($)
+  $.clock.after(t + 50 + Math.max(3, resteApres) * 1000, () => {
+    void (async () => {
+      if (numero === exempleGeneration && (await $.state.get(progression)).value?.exemple === true) {
         await $.state.set(progression, null)
       }
     })()
@@ -764,6 +855,85 @@ async function bandeRelais($: EngineInterface, e: Bande): Promise<RenderElement>
 
 // La Progression (variante 1, « barre fine et chapelet ») : titre et %, une barre fine sur toute
 // la largeur, puis un point par étape (● faite, ◉ en cours, ○ restante).
+// Le mode sans liste (croquis 3, « piste de temps ») : un segment par suite d'actions de même
+// sorte, aussi long qu'elles ont duré ; la piste se remplit de gauche à droite, 100 % à la fin.
+function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: number): RenderElement {
+  const { Box, Text } = $.ui.resolve(e)
+  const fini = p.fin !== null
+  const segments = segmentsPiste(p, p.fin ?? instant)
+  const part = remplissagePiste(p, instant)
+  const n = totalActions(p)
+  const ecoule = duree((p.fin ?? instant) - p.debut)
+  const droite = fini ? `✓ ${n} action${n > 1 ? 's' : ''} · ${ecoule}` : `⏱ ${ecoule}`
+  const teinte = (s: SorteAction) => (fini ? VERT_FIN : TEINTES_SORTES[s])
+
+  const largeur = Math.max(10, e.props.bodyColumns - 4)
+  let piste: RenderElement
+  if (e.surface === 'terminal') {
+    const parts = repartir(
+      segments.map(s => s.duree),
+      fini ? largeur : Math.round(part * largeur),
+    )
+    const morceaux = segments.map((s, i) => (
+      <Text color={teinte(s.sorte)}>{(s.enCours && !fini ? '▓' : '█').repeat(parts[i] ?? 0)}</Text>
+    ))
+    const vide = Math.max(0, largeur - parts.reduce((a, b) => a + b, 0))
+    piste = (
+      <Text>
+        {morceaux}
+        <Text color="subtle">{'░'.repeat(vide)}</Text>
+      </Text>
+    )
+  } else {
+    const { Svg } = $.ui.resolve(e)
+    const px = Math.round(largeur * 7)
+    piste = (
+      <Svg
+        source={pisteSvg(segments, part, px, fini)}
+        alt={`${p.titre} : ${n} action${n > 1 ? 's' : ''}, ${ecoule}`}
+        width={px}
+        height={8}
+      />
+    )
+  }
+
+  // Un point par sorte d'action, avec son nombre ; puis l'action en cours, ou la fin.
+  const sortes: SorteAction[] = ['bash', 'lecture', 'modif', 'autre']
+  const legende: RenderElement[] = []
+  for (const s of sortes) {
+    const nombre = p.comptes?.[s] ?? 0
+    if (nombre > 0) {
+      legende.push(<Text color={teinte(s)}>{`${legende.length > 0 ? '   ' : ''}●`}</Text>)
+      legende.push(<Text dimColor>{` ${NOMS_SORTES[s]} ×${nombre}`}</Text>)
+    }
+  }
+  const courante = actionCourante(p)
+
+  return (
+    <Box key="progression" flexDirection="column" width="100%">
+      <Box key="progression-titre" flexDirection="row" gap={1}>
+        <Text bold color={fini ? 'success' : undefined}>
+          {p.titre}
+        </Text>
+        <Box key="progression-espace" flexGrow={1} />
+        <Text color={fini ? 'success' : undefined} dimColor={!fini}>
+          {droite}
+        </Text>
+      </Box>
+      <Box key="progression-piste">{piste}</Box>
+      <Box key="progression-legende" flexDirection="row" gap={2}>
+        <Text>{legende}</Text>
+        <Box key="progression-legende-espace" flexGrow={1} />
+        {fini ? (
+          <Text color="success">Toutes les actions sont faites · 100 %</Text>
+        ) : courante === undefined ? null : (
+          <Text dimColor>{`En cours : ${courante}`}</Text>
+        )}
+      </Box>
+    </Box>
+  )
+}
+
 async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Promise<RenderElement | undefined> {
   if (!r.progression) {
     return undefined
@@ -774,6 +944,10 @@ async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Prom
   const instant = await $.clock.now()
   if (p === null || !visible(p, instant, r.resteApres * 1000, r.apparaitApres * 1000)) {
     return undefined
+  }
+  // Sans liste de tâches : la piste de temps des actions.
+  if (p.etapes.length === 0) {
+    return bandePiste($, e, p, instant)
   }
 
   const { Box, Text } = $.ui.resolve(e)
@@ -1096,14 +1270,17 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
             {rangee(
               'exemple',
               'Essai',
-              <Button key="voir-exemple" label="▶ Voir un exemple" onPress={() => void montrerExemple($)} />,
+              <Button key="voir-exemple" label="▶ Avec liste" onPress={() => void montrerExemple($)} />,
+              <Button key="voir-exemple-sans-liste" label="▶ Sans liste" onPress={() => void montrerExempleSansListe($)} />,
             )}
             <Box key="infos-texte" flexDirection="column">
-              <Text dimColor>Les étapes viennent de la liste de tâches de Claude (TodoWrite, TaskCreate).</Text>
+              <Text dimColor>Avec liste : les étapes de la liste de tâches de Claude (TodoWrite, TaskCreate).</Text>
+              <Text dimColor>Sans liste : une piste de temps, un segment par action (bleu commande, violet lecture,</Text>
+              <Text dimColor>vert modification), remplie de gauche à droite jusqu’à 100 % à la fin.</Text>
               <Text dimColor>
                 {`La barre apparaît en haut de la bande ${r.apparaitApres === 0 ? 'dès qu’une liste existe' : `après ${r.apparaitApres} s de travail, si une liste existe`}, et ${r.resteApres === 0 ? 'se ferme dès la fin' : `reste ${r.resteApres} s après la fin`}.`}
               </Text>
-              <Text dimColor>● faite · ◉ en cours · ○ restante</Text>
+              <Text dimColor>Avec liste : ● faite · ◉ en cours · ○ restante</Text>
             </Box>
           </Box>
         )
@@ -1279,13 +1456,29 @@ export const register: Register = (on, options) => {
 
   // Confirmation : sans feu vert, les outils qui écrivent des fichiers sont refusés.
   // Une panne du mod laisse passer : c'est un garde-fou de confort, pas de sécurité.
+  // Progression sans liste : chaque action du fil principal ajoute son temps à la piste.
+  // (Un seul hook tool.call sans matcher est permis : les deux rôles partagent celui-ci.)
   on('tool.call', async ($, e, next) => {
     if (OUTILS_BLOQUES.includes(String(e.tool)) && (await lireReglages($)).confirmation) {
       if ((await $.state.get(feuVert)).value !== true) {
         return { deny: REFUS }
       }
     }
-    return next(e)
+    const outil = String(e.tool)
+    if (e.agentId !== undefined || !suivre(outil)) {
+      return next(e)
+    }
+    const id = e.tool_use_id
+    const sorte = sorteDe(outil)
+    const titre = libelleOutil(outil, e as unknown as Record<string, unknown>)
+    const debutAction = await $.clock.now()
+    await changerProgression($, p => debuterAction(p, id, sorte, titre, debutAction))
+    try {
+      return await next(e)
+    } finally {
+      const finAction = await $.clock.now()
+      await changerProgression($, p => finirAction(p, id, finAction))
+    }
   }).catch(($, e, next) => next(e))
 
   // Son : le début de la tâche.
@@ -1297,6 +1490,7 @@ export const register: Register = (on, options) => {
     // Progression : la tâche continue si sa liste n'est pas finie, sinon une nouvelle commence.
     const { value: avant = null } = await $.state.get(progression)
     await $.state.set(progression, demarrer(avant, e.text, instant))
+    demarrerChrono($)
     // Apparition différée : la bande se redessine quand le délai est écoulé.
     const { apparaitApres } = await lireReglages($)
     if (apparaitApres > 0) {
@@ -1357,6 +1551,7 @@ export const register: Register = (on, options) => {
     }
     // Progression : la tâche s'arrête (finie ou en pause) ; une interruption la retire aussitôt.
     if (!sousAgent) {
+      arreterChrono()
       const fin = await $.clock.now()
       if (e.reason === 'aborted' || e.reason === 'error') {
         // Une heure plus tôt : plus longtemps que le plus long « Reste après ».

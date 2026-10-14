@@ -1,7 +1,7 @@
 // Fonctions pures du module Progression (variante 1, « barre fine et chapelet ») : les étapes
 // viennent de la liste de tâches de Claude (TodoWrite, TaskCreate, TaskUpdate).
 
-import type { EtapeProgression, Progression } from '../types'
+import type { BlocAction, EtapeProgression, Progression, SorteAction } from '../types'
 
 /** Par défaut, une tâche terminée reste dans la bande, avec sa coche ✓, ce temps-là (réglable). */
 export const AFFICHAGE_FIN_MS = 15_000
@@ -178,7 +178,7 @@ export function chapelet(p: Progression): { faits: string; courant: string; rest
 
 /**
  * Visible une fois la tâche en marche depuis `apparaitMs`, puis `resteMs` après sa fin (0 : plus du
- * tout) ; jamais sans étapes. Une tâche finie avant `apparaitMs` ne s'affiche pas du tout.
+ * tout) ; jamais sans étapes ni actions. Une tâche finie avant `apparaitMs` ne s'affiche pas du tout.
  */
 export function visible(
   p: Progression | null,
@@ -186,7 +186,7 @@ export function visible(
   resteMs: number = AFFICHAGE_FIN_MS,
   apparaitMs = 0,
 ) {
-  if (p === null || p.etapes.length === 0) {
+  if (p === null || (p.etapes.length === 0 && (p.blocs ?? []).length === 0)) {
     return false
   }
   if (p.exemple) {
@@ -217,3 +217,207 @@ export function exemple(maintenant: number): Progression {
     })),
   }
 }
+
+// ── Mode sans liste : la piste de temps ───────────────────────────────────────
+// Sans liste de tâches, chaque action du fil principal ajoute un segment à la piste, aussi long
+// qu'elle a duré. La piste se remplit de gauche à droite et n'atteint 100 % qu'à la fin.
+
+/** Au-delà, les deux premiers segments sont fondus en un. */
+export const BLOCS_MAX = 40
+/** La piste est à moitié pleine après ce temps de travail : part = t / (t + DEMI_PISTE_MS). */
+export const DEMI_PISTE_MS = 15_000
+
+/** Les outils qui ne sont pas des actions : la liste de tâches, les questions, le mode plan. */
+const NON_SUIVIS = /^(TodoWrite|Task(Create|Update|Get|List|Stop)|AskUserQuestion|EnterPlanMode|ExitPlanMode)$/
+
+export const suivre = (outil: string) => !NON_SUIVIS.test(outil)
+
+export function sorteDe(outil: string): SorteAction {
+  if (/^(Bash|BashOutput|KillShell|PowerShell|Monitor)$/.test(outil)) {
+    return 'bash'
+  }
+  if (/^(Read|Grep|Glob|LS|LSP|WebFetch|WebSearch|ToolSearch|ListMcpResourcesTool|ReadMcpResource\w*)$/.test(outil)) {
+    return 'lecture'
+  }
+  if (/^(Edit|MultiEdit|Write|NotebookEdit)$/.test(outil)) {
+    return 'modif'
+  }
+  return 'autre'
+}
+
+export const NOMS_SORTES: Record<SorteAction, string> = {
+  bash: 'Bash',
+  lecture: 'Lecture',
+  modif: 'Modif.',
+  autre: 'Autre',
+}
+
+/** L'outil en clair, pour « En cours » (repris de fil). */
+export function libelleOutil(outil: string, entree: Record<string, unknown>) {
+  const texte = (k: string) => (typeof entree[k] === 'string' ? (entree[k] as string) : '')
+  const fichier = (k: string) => texte(k).split('/').pop() ?? ''
+  const court = (s: string) => (s.length > 48 ? `${s.slice(0, 47)}…` : s)
+  let detail = ''
+  if (outil === 'Bash') {
+    detail = texte('description') || texte('command')
+  } else if (outil === 'Read' || outil === 'Edit' || outil === 'Write' || outil === 'NotebookEdit') {
+    detail = fichier('file_path') || fichier('notebook_path')
+  } else if (outil === 'Grep' || outil === 'Glob') {
+    detail = texte('pattern')
+  } else if (outil === 'WebFetch') {
+    detail = texte('url')
+  } else if (outil === 'WebSearch') {
+    detail = texte('query')
+  } else if (outil === 'Agent') {
+    detail = texte('description')
+  }
+  const nom = outil.startsWith('mcp__') ? outil.split('__').slice(1).join(' · ') : outil
+  return detail === '' ? nom : `${nom} · ${court(detail.split('\n')[0] ?? '')}`
+}
+
+/** Une action commence : elle rejoint le dernier segment s'il est de même sorte. */
+export function debuterAction(p: Progression, id: string, sorte: SorteAction, titre: string, maintenant: number) {
+  const blocs = [...(p.blocs ?? [])]
+  const dernier = blocs[blocs.length - 1]
+  if (dernier !== undefined && dernier.sorte === sorte) {
+    blocs[blocs.length - 1] = { ...dernier, n: dernier.n + 1, titre, ouverts: { ...dernier.ouverts, [id]: maintenant } }
+  } else {
+    blocs.push({ sorte, n: 1, duree: 0, titre, ouverts: { [id]: maintenant } })
+  }
+  // Trop de segments : les deux plus anciens se fondent, à la sorte du plus long.
+  while (blocs.length > BLOCS_MAX) {
+    const [a, b] = blocs as [BlocAction, BlocAction, ...BlocAction[]]
+    blocs.splice(0, 2, {
+      sorte: a.duree >= b.duree ? a.sorte : b.sorte,
+      n: a.n + b.n,
+      duree: a.duree + b.duree,
+      titre: b.titre,
+      ouverts: { ...a.ouverts, ...b.ouverts },
+    })
+  }
+  const comptes = { ...(p.comptes ?? {}), [sorte]: (p.comptes?.[sorte] ?? 0) + 1 }
+  return { ...p, blocs, comptes }
+}
+
+/** Une action finit : sa durée s'ajoute à son segment. */
+export function finirAction(p: Progression, id: string, maintenant: number): Progression {
+  const blocs = (p.blocs ?? []).map(b => {
+    const debut = b.ouverts[id]
+    if (debut === undefined) {
+      return b
+    }
+    const ouverts = { ...b.ouverts }
+    delete ouverts[id]
+    return { ...b, duree: b.duree + Math.max(0, maintenant - debut), ouverts }
+  })
+  return { ...p, blocs }
+}
+
+export type Segment = { sorte: SorteAction; duree: number; enCours: boolean }
+
+/** Les segments à dessiner, la durée des actions en cours comptée jusqu'à maintenant. */
+export function segmentsPiste(p: Progression, maintenant: number): Segment[] {
+  return (p.blocs ?? []).map(b => {
+    const ouverts = Object.values(b.ouverts)
+    const enCours = ouverts.reduce((total, debut) => total + Math.max(0, maintenant - debut), 0)
+    return { sorte: b.sorte, duree: b.duree + enCours, enCours: ouverts.length > 0 }
+  })
+}
+
+/** L'action en cours (la plus récente), ou rien. */
+export function actionCourante(p: Progression): string | undefined {
+  const blocs = p.blocs ?? []
+  for (let i = blocs.length - 1; i >= 0; i--) {
+    const b = blocs[i]
+    if (b !== undefined && Object.keys(b.ouverts).length > 0) {
+      return b.titre
+    }
+  }
+  return undefined
+}
+
+export const totalActions = (p: Progression) =>
+  Object.values(p.comptes ?? {}).reduce((total: number, n) => total + (n ?? 0), 0)
+
+/** La part remplie de la piste : de gauche à droite, de plus en plus lentement, 100 % à la fin. */
+export function remplissagePiste(p: Progression, maintenant: number) {
+  if (p.fin !== null) {
+    return 1
+  }
+  const ecoule = Math.max(0, maintenant - p.debut)
+  return ecoule / (ecoule + DEMI_PISTE_MS)
+}
+
+/** Partage `largeur` cellules entre les durées : chacune au moins 1, le total exact. */
+export function repartir(durees: readonly number[], largeur: number): number[] {
+  if (durees.length === 0 || largeur <= 0) {
+    return durees.map(() => 0)
+  }
+  if (largeur < durees.length) {
+    return durees.map((_, i) => (i < largeur ? 1 : 0))
+  }
+  const somme = durees.reduce((a, b) => a + b, 0) || 1
+  const brut = durees.map(d => (d / somme) * largeur)
+  const parts = brut.map(x => Math.max(1, Math.floor(x)))
+  let reste = largeur - parts.reduce((a, b) => a + b, 0)
+  const ordre = brut.map((x, i) => [x - Math.floor(x), i] as const).sort((a, b) => b[0] - a[0])
+  for (let j = 0; reste > 0; j = (j + 1) % ordre.length) {
+    const i = ordre[j]?.[1] ?? 0
+    parts[i] = (parts[i] ?? 0) + 1
+    reste--
+  }
+  while (reste < 0) {
+    const i = parts.indexOf(Math.max(...parts))
+    parts[i] = (parts[i] ?? 1) - 1
+    reste++
+  }
+  return parts
+}
+
+/** Les teintes des sortes, et le vert de la fin. */
+export const TEINTES_SORTES: Record<SorteAction, string> = {
+  bash: '#3b82f6',
+  lecture: '#7F77DD',
+  modif: '#1D9E75',
+  autre: '#8b949e',
+}
+export const VERT_FIN = '#2ea043'
+
+/**
+ * La piste de l'app de bureau : un rail gris arrondi, la part remplie à gauche, un segment par
+ * bloc (2 px entre eux) ; le segment en cours pulse. Tout passe au vert à la fin.
+ */
+export function pisteSvg(segments: readonly Segment[], part: number, largeur: number, fini: boolean) {
+  const h = 8
+  const rempli = Math.round(largeur * Math.min(1, Math.max(0, part)))
+  const espaces = Math.max(0, segments.length - 1) * 2
+  const somme = segments.reduce((a, s) => a + s.duree, 0) || 1
+  let x = 0
+  let rects = ''
+  for (const [i, s] of segments.entries()) {
+    const reste = i === segments.length - 1
+    const w = reste ? Math.max(1, rempli - x) : Math.max(1, Math.round(((rempli - espaces) * s.duree) / somme))
+    const teinte = fini ? VERT_FIN : TEINTES_SORTES[s.sorte]
+    const pouls = s.enCours && !fini ? `<animate attributeName="opacity" values="1;0.4;1" dur="1.2s" repeatCount="indefinite"/>` : ''
+    rects += `<rect x="${x}" width="${Math.max(0, Math.min(w, rempli - x))}" height="${h}" fill="${teinte}">${pouls}</rect>`
+    x += w + 2
+  }
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${largeur}" height="${h}" viewBox="0 0 ${largeur} ${h}">` +
+    `<clipPath id="rail"><rect width="${largeur}" height="${h}" rx="${h / 2}"/></clipPath>` +
+    `<g clip-path="url(#rail)"><rect width="${largeur}" height="${h}" fill="#8b949e" fill-opacity="0.25"/>${rects}</g>` +
+    `</svg>`
+  )
+}
+
+/** L'exemple sans liste du panneau : les actions d'une publication, en millisecondes. */
+export const EXEMPLE_SANS_LISTE: readonly { outil: string; titre: string; ms: number }[] = [
+  { outil: 'Read', titre: 'Read · README.md', ms: 1500 },
+  { outil: 'Bash', titre: 'Bash · Valide le mod', ms: 2500 },
+  { outil: 'Read', titre: 'Read · CHANGELOG.md', ms: 1000 },
+  { outil: 'Edit', titre: 'Edit · plugin.json', ms: 2000 },
+  { outil: 'Bash', titre: 'Bash · Lance les tests', ms: 5000 },
+  { outil: 'Edit', titre: 'Edit · CHANGELOG.md', ms: 1500 },
+  { outil: 'Bash', titre: 'Bash · Commit, push, tag', ms: 6500 },
+  { outil: 'Bash', titre: 'Bash · Publie la release', ms: 3000 },
+]

@@ -5,14 +5,22 @@ import type { On } from 'claude-code'
 import { estFeuVert, NOTE_ATTENTE, NOTE_FEU_VERT, REFUS, SECTION } from '../hooks/confirmation'
 import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE } from '../hooks/correction'
 import {
+  actionCourante,
   appliquerTodos,
   chapelet,
   compter,
+  debuterAction,
   demarrer,
+  finirAction,
   majEtape,
   nouvelle,
   pourcentage,
+  remplissagePiste,
+  repartir,
   resteEstime,
+  segmentsPiste,
+  sorteDe,
+  totalActions,
   visible,
 } from '../hooks/progression'
 import { consigne, extraire } from '../hooks/proposition'
@@ -366,6 +374,117 @@ describe('la Progression : apparaît après', () => {
       expect(await ui.find({ key: 'progression' })).toBeUndefined()
       await ui.unmount()
       await pane.unmount()
+    })
+  }
+})
+
+describe('la Progression sans liste (fonctions pures)', () => {
+  test('les sortes d’actions', () => {
+    expect(['Bash', 'Read', 'Grep', 'Edit', 'Write', 'Agent'].map(sorteDe)).toEqual([
+      'bash',
+      'lecture',
+      'lecture',
+      'modif',
+      'modif',
+      'autre',
+    ])
+  })
+
+  test('la piste : segments par sorte, durées, action en cours, remplissage', () => {
+    let p = nouvelle('Publie', 0)
+    p = debuterAction(p, 'a', 'lecture', 'Read · README.md', 0)
+    p = finirAction(p, 'a', 2_000)
+    p = debuterAction(p, 'b', 'bash', 'Bash · Valide', 2_000)
+    p = finirAction(p, 'b', 5_000)
+    p = debuterAction(p, 'c', 'bash', 'Bash · Teste', 5_000)
+    expect(segmentsPiste(p, 9_000)).toEqual([
+      { sorte: 'lecture', duree: 2_000, enCours: false },
+      { sorte: 'bash', duree: 7_000, enCours: true },
+    ])
+    expect(actionCourante(p)).toBe('Bash · Teste')
+    expect(totalActions(p)).toBe(3)
+    expect(visible(p, 9_000)).toBe(true)
+    expect(remplissagePiste(p, 15_000)).toBe(0.5)
+    expect(remplissagePiste({ ...p, fin: 20_000 }, 20_000)).toBe(1)
+    expect(repartir([2, 7], 30)).toEqual([7, 23])
+    expect(repartir([1, 1, 1], 10).reduce((a, b) => a + b, 0)).toBe(10)
+  })
+})
+
+describe('la Progression sans liste dans la bande', () => {
+  for (const surface of SURFACES) {
+    test(`une piste par action, l’action en cours, 100 % et ✓ à la fin (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+      // Pendant la commande Bash, la bande doit nommer l'action en cours.
+      let enCoursVu = false
+      let chercher: ((texte: RegExp) => Promise<boolean>) | undefined
+      on('tool.call', async (_$, e) => {
+        await horloge.advance(e.tool === 'Bash' ? 4_000 : 1_000)
+        if (e.tool === 'Bash' && chercher !== undefined) {
+          enCoursVu = await chercher(/^En cours : Bash · Lance les tests/)
+        }
+        return { result: {}, text: 'ok' }
+      })
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      chercher = async texte => (await ui.find({ type: 'Text', text: texte })) !== undefined
+      await $.turn.start({ text: 'Publie la version', turnId: 't1' })
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/x/README.md' })
+      await $.tool.call({ tool: 'Bash', tool_use_id: 'b1', command: 'claude plugin test .', description: 'Lance les tests' })
+      expect(enCoursVu).toBe(true)
+      expect(await ui.find({ key: 'progression-piste' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Publie la version' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^⏱ 5 s$/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: ' Lecture ×1' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: ' Bash ×1' })).toBeDefined()
+      if (surface === 'terminal') {
+        expect(await ui.find({ type: 'Text', text: /^░+$/ })).toBeDefined()
+      }
+
+      await $.turn.complete({ reason: 'answer', answer: 'fait', durationMs: 0, isAborted: false, turnId: 't1' })
+      expect(await ui.find({ type: 'Text', text: '✓ 2 actions · 5 s' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Toutes les actions sont faites · 100 %' })).toBeDefined()
+      if (surface === 'terminal') {
+        expect(await ui.find({ type: 'Text', text: /^░+$/ })).toBeUndefined()
+      }
+      await ui.unmount()
+    })
+
+    test(`une liste de tâches prend le relais ; un sous-agent ne compte pas (${surface})`, async ($, on) => {
+      simuler(on)
+      simulerTours(on)
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      await $.turn.start({ text: 'Migration', turnId: 't1' })
+      // L'appel d'un sous-agent porte son agentId (que le type de l'appel de test ne déclare pas).
+      const appelSousAgent = { tool: 'Read', tool_use_id: 'r1', file_path: '/x/a.md', agentId: 'sous-agent' }
+      await $.tool.call(appelSousAgent as unknown as Parameters<typeof $.tool.call>[0])
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r2', file_path: '/x/a.md' })
+      expect(await ui.find({ key: 'progression-piste' })).toBeDefined()
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
+      expect(await ui.find({ key: 'progression-piste' })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: 'Étape 4 sur 7 · Valider' })).toBeDefined()
+      await ui.unmount()
+    })
+
+    test(`l’exemple sans liste du panneau passe ses 8 actions, puis s’en va (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      const pane = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      await pane.press({ key: 'onglet-progression' })
+      await pane.press({ key: 'voir-exemple-sans-liste' })
+      await horloge.advance(3_000)
+      expect(await ui.find({ type: 'Text', text: 'Publie la version 0.3.0 (exemple)' })).toBeDefined()
+      expect(await ui.find({ key: 'progression-piste' })).toBeDefined()
+      await horloge.advance(21_000)
+      expect(await ui.find({ type: 'Text', text: /^✓ 8 actions/ })).toBeDefined()
+      await horloge.advance(16_000)
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+      await pane.unmount()
+      await ui.unmount()
     })
   }
 })

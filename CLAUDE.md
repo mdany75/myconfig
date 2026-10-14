@@ -57,6 +57,11 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   (0 par défaut ; une tâche finie avant ne s'affiche pas), puis `resteApres` secondes après la fin
   (15 par défaut) ; choix dans `RESTES` de `hooks/reglages.ts`. Un même événement ne prend qu'un hook sans matcher : les hooks
   `tool.call` de la Progression ont chacun un matcher `{ tool }`.
+- Progression sans liste : le hook `tool.call` sans matcher (partagé avec la garde de la
+  Confirmation) note chaque action du fil principal (`debuterAction` / `finirAction`) ; les
+  actions consécutives de même sorte forment un segment (`BLOCS_MAX` au plus). La piste se remplit
+  à `t / (t + 15 s)` et passe à 100 % à la fin. Un chrono `$.clock.every(1000)` tourne de
+  `turn.start` à `turn.complete`.
 - Ne pas activer en même temps jauge, fil, fil-son, relais, plume ou cap.
 - Avant de pousser une fonctionnalité : README et CHANGELOG à jour, capture d'écran
   (`docs/capture.png`) refaite si la bande ou le panneau a changé et qu'une capture existe, et une

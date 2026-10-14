@@ -61,6 +61,23 @@ export type EtapeProgression = {
   fin: number | null
 }
 
+/** La sorte d'une action du mode sans liste : commande, lecture, modification, ou autre. */
+export type SorteAction = 'bash' | 'lecture' | 'modif' | 'autre'
+
+/**
+ * Un segment de la piste du mode sans liste : des actions consécutives de même sorte.
+ * `duree` cumule les actions finies (ms) ; `ouverts` donne le début de chaque action en cours.
+ */
+export type BlocAction = {
+  sorte: SorteAction
+  /** Nombre d'actions du segment. */
+  n: number
+  duree: number
+  /** Libellé de la dernière action du segment (« Bash · Commit, push… »). */
+  titre: string
+  ouverts: Record<string, number>
+}
+
 /** La tâche longue en cours : son titre (la consigne), ses étapes, son début et sa fin. */
 export type Progression = {
   titre: string
@@ -70,6 +87,10 @@ export type Progression = {
   etapes: EtapeProgression[]
   /** Vrai pour l'exemple du panneau, qui ne suit aucune vraie tâche. */
   exemple: boolean
+  /** Mode sans liste : la piste des actions du fil principal (absente avant la 0.4.0). */
+  blocs?: BlocAction[]
+  /** Mode sans liste : nombre d'actions par sorte. */
+  comptes?: Partial<Record<SorteAction, number>>
 }
 
 /**
