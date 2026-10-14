@@ -2,7 +2,7 @@
 
 Mod Claude Code qui réunit en un seul mod, réglables d'un même panneau, les mods
 [jauge](../jauge), [fil-son](../fil-son), [relais](../relais), [plume](../plume) et
-[cap](../cap), plus un sixième module, la Confirmation. Une carte au-dessus du champ de saisie
+[cap](../cap), plus deux modules nouveaux, la Confirmation et la Progression. Une carte au-dessus du champ de saisie
 réunit les boutons et les chiffres ; un panneau à onglets règle chaque module.
 
 ![La bande MyConfig au-dessus du champ de saisie, dans l'app de bureau de Claude](docs/capture.png)
@@ -17,6 +17,7 @@ réunit les boutons et les chiffres ; un panneau à onglets règle chaque module
 | **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. | On / Off |
 | **Proposition** | cap | Des suites logiques après chaque réponse ; un clic en lance une. | On / Off, 1 à 5, sur une ligne ou une par ligne ; modèle de la session |
 | **Confirmation** | — | Claude résume ce qu'il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit. | On / Off |
+| **Progression** | fil | Suit les longues tâches : une barre fine, et un point par étape de la liste de tâches de Claude. | On / Off |
 
 ### La bande
 
@@ -47,9 +48,29 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
   cache), nombre (1 à 5), disposition (« Sur une ligne », « Une par ligne »), « ↻ Proposer maintenant ».
 - **Stats** : contexte, jetons et durée de la session.
 - **Confirmation** : l'état du dernier message (feu vert donné ou en attente).
+- **Progression** : « ▶ Voir un exemple » montre 20 secondes une tâche de 7 étapes dans la bande.
 
-Au clavier, une fois le panneau sélectionné : `1` à `6` changent d'onglet, `o` et `f` mettent à On
+Au clavier, une fois le panneau sélectionné : `1` à `7` changent d'onglet, `o` et `f` mettent à On
 ou à Off, `a` et `c` affichent ou retirent les boutons de la Correction. Les réglages sont gardés d'une session à l'autre.
+
+### La Progression
+
+Dès que Claude tient une liste de tâches (TodoWrite, TaskCreate, TaskUpdate), un bloc apparaît
+en haut de la carte (variante 1, « barre fine et chapelet ») :
+
+```
+Migration des presets                                        50 % · ~4 min
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+● ● ● ◉ ○ ○ ○   Étape 4 sur 7 · Valider
+```
+
+- Le titre est ta consigne ; à droite, le % (étapes faites, plus la moitié de celle en cours) et
+  le temps restant estimé au rythme des étapes déjà faites.
+- Le chapelet : ● étape faite, ◉ étape en cours, ○ étape restante.
+- Une tâche finie passe au vert avec « ✓ 7 étapes · durée » et reste 15 secondes ; une tâche
+  interrompue disparaît aussitôt ; une liste inachevée en fin de tour reste « En pause » et
+  reprend au tour suivant.
+- Seul le fil principal compte : les listes des sous-agents sont ignorées.
 
 ### La Confirmation
 
@@ -70,7 +91,7 @@ consigne la retient.
 ```
 /myconfig                          ouvre le panneau
 /myconfig etat                     résume les réglages et les stats
-/myconfig <module> on | off        son, relais, correction, stats, proposition, confirmation
+/myconfig <module> on | off        son, relais, correction, stats, proposition, confirmation, progression
 /myconfig proposition 1 à 5        nombre de propositions
 /myconfig proposition ligne | liste
 /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction
@@ -98,7 +119,7 @@ claude plugin install myconfig@plugins-dany
 Le plugin est lu directement dans `~/Developer/Plugins/myconfig` : après une modification,
 `/reload-plugins` dans une session suffit, sans réinstaller.
 
-Ne pas activer MyConfig en même temps que jauge, fil-son, relais, plume ou cap : boutons et son
+Ne pas activer MyConfig en même temps que jauge, fil, fil-son, relais, plume ou cap : boutons et son
 seraient en double (`claude plugin disable <mod>@plugins-dany` les désactive).
 
 Testé avec Claude Code 2.1.295.
@@ -123,7 +144,7 @@ terminal et dans l'app de bureau ; ils ne jouent aucun son et n'écrivent aucun 
 - `hooks/hooks.json` : nomme le module de hooks
 - `hooks/register.tsx` : tous les hooks, la bande et le panneau (tout ce qui touche au moteur)
 - `hooks/reglages.ts` : réglages par défaut, commande `/myconfig` (pur)
-- `hooks/stats.ts`, `hooks/proposition.ts`, `hooks/correction.ts`, `hooks/confirmation.ts`,
+- `hooks/stats.ts`, `hooks/progression.ts`, `hooks/proposition.ts`, `hooks/correction.ts`, `hooks/confirmation.ts`,
   `hooks/son.ts`, `hooks/relais-consigne.ts`, `hooks/relais-outils.ts` : fonctions pures des modules
 - `types/index.d.ts` : contrat des valeurs de `$.state`
 - `sons/fin.aiff` : signal de fin

@@ -4,7 +4,7 @@
 
 import type { EngineInterface, RenderElement, RenderInput, Register } from 'claude-code'
 
-import type { Disposition, Module, Reglages, TravailCorrection } from '../types'
+import type { Disposition, Module, Progression, Reglages, TravailCorrection } from '../types'
 import {
   CONSIGNE as CONSIGNE_CONFIRMATION,
   estDeLUtilisateur,
@@ -23,6 +23,23 @@ import {
   raisonRefus,
 } from './correction'
 import { USAGE as USAGE_CORRECTION } from './correction'
+import {
+  AFFICHAGE_FIN_MS,
+  ajouterEtape,
+  appliquerTodos,
+  chapelet,
+  compter,
+  demarrer,
+  duree,
+  exemple,
+  EXEMPLE_MS,
+  majEtape,
+  pourcentage,
+  resteEstime,
+  terminee,
+  visible,
+} from './progression'
+import type { Todo } from './progression'
 import { consigne as consigneProposition, extraire } from './proposition'
 import {
   appliquer,
@@ -69,6 +86,7 @@ import {
   pourcent,
   remplissage,
   trierLimites,
+  VERT,
 } from './stats'
 
 // ── État ──────────────────────────────────────────────────────────────────────
@@ -86,6 +104,7 @@ const improved = { plugin: 'myconfig', key: 'improved' } as const
 const correctionEnCours = { plugin: 'myconfig', key: 'correctionEnCours' } as const
 const etapeRelais = { plugin: 'myconfig', key: 'etapeRelais' } as const
 const feuVert = { plugin: 'myconfig', key: 'feuVert' } as const
+const progression = { plugin: 'myconfig', key: 'progression' } as const
 
 // Les réglages dans $.store, qui survit aux sessions et à « /clear ».
 const CLE_REGLAGES = 'reglages'
@@ -165,6 +184,41 @@ async function basculerLimites($: EngineInterface) {
   await mesurer($)
   const { value: ouvert = false } = await $.state.get(limitesOuvertes)
   await $.state.set(limitesOuvertes, !ouvert)
+}
+
+// ── Progression ───────────────────────────────────────────────────────────────
+
+async function changerProgression($: EngineInterface, fn: (p: Progression) => Progression) {
+  const { value: p = null } = await $.state.get(progression)
+  if (p !== null && !p.exemple) {
+    await $.state.set(progression, fn(p))
+  }
+}
+
+// Une fois la tâche finie, la bande se redessine pour retirer la barre : `maintenant` avance.
+function redessinerApres($: EngineInterface, ms: number) {
+  $.clock.after(ms, () => {
+    void (async () => {
+      await $.state.set(maintenant, await $.clock.now())
+    })()
+  })
+}
+
+// L'exemple du panneau : 20 secondes, sans toucher à une vraie tâche en cours.
+async function montrerExemple($: EngineInterface) {
+  const { value: p = null } = await $.state.get(progression)
+  if (p !== null && !p.exemple && p.fin === null && p.etapes.length > 0) {
+    $.ui.toast('Progression : une vraie tâche est en cours, l’exemple attendra.')
+    return
+  }
+  await $.state.set(progression, exemple(await $.clock.now()))
+  $.clock.after(EXEMPLE_MS, () => {
+    void (async () => {
+      if ((await $.state.get(progression)).value?.exemple === true) {
+        await $.state.set(progression, null)
+      }
+    })()
+  })
 }
 
 // ── Proposition ───────────────────────────────────────────────────────────────
@@ -707,6 +761,89 @@ async function bandeRelais($: EngineInterface, e: Bande): Promise<RenderElement>
   )
 }
 
+// La Progression (variante 1, « barre fine et chapelet ») : titre et %, une barre fine sur toute
+// la largeur, puis un point par étape (● faite, ◉ en cours, ○ restante).
+async function bandeProgression($: EngineInterface, e: Bande, r: Reglages): Promise<RenderElement | undefined> {
+  if (!r.progression) {
+    return undefined
+  }
+  const { value: p = null } = await $.state.get(progression)
+  // Lu pour être redessiné quand `maintenant` avance (fin de l'affichage, durée).
+  await $.state.get(maintenant)
+  const instant = await $.clock.now()
+  if (p === null || !visible(p, instant)) {
+    return undefined
+  }
+
+  const { Box, Text } = $.ui.resolve(e)
+  const { total, courante, rang } = compter(p)
+  const fini = terminee(p)
+  const pc = fini ? 100 : pourcentage(p)
+  const teinte = fini ? VERT : BLEU
+  const reste = resteEstime(p, instant)
+  const droite = fini
+    ? `✓ ${total} étapes · ${duree((p.fin ?? instant) - p.debut)}`
+    : reste === ''
+      ? `${pc} %`
+      : `${pc} % · ${reste}`
+  const legende = fini
+    ? 'Toutes les étapes sont faites'
+    : `${p.fin !== null ? 'En pause · ' : ''}Étape ${rang} sur ${total}${courante === undefined ? '' : ` · ${courante.titre}`}`
+
+  const largeur = Math.max(10, e.props.bodyColumns - 4)
+  let barreDessinee: RenderElement
+  if (e.surface === 'terminal') {
+    const { plein, vide } = remplissage(pc, largeur)
+    barreDessinee = (
+      <Text>
+        <Text color={teinte}>{'━'.repeat(plein)}</Text>
+        <Text color="subtle">{'━'.repeat(vide)}</Text>
+      </Text>
+    )
+  } else {
+    const { Svg } = $.ui.resolve(e)
+    const px = Math.round(largeur * 7)
+    barreDessinee = <Svg source={barre(pc, px, teinte)} alt={`${p.titre} : ${pc} %`} width={px} height={6} />
+  }
+
+  // Le chapelet : faites et en cours en couleur, restantes en gris.
+  const ch = chapelet(p)
+  const morceaux: RenderElement[] = []
+  if (ch.faits !== '') {
+    morceaux.push(<Text color={teinte}>{ch.faits}</Text>)
+  }
+  if (ch.courant !== '') {
+    morceaux.push(
+      <Text color={teinte} bold>
+        {`${morceaux.length > 0 ? ' ' : ''}${ch.courant}`}
+      </Text>,
+    )
+  }
+  if (ch.restants !== '') {
+    morceaux.push(<Text color="subtle">{`${morceaux.length > 0 ? ' ' : ''}${ch.restants}`}</Text>)
+  }
+  if (ch.reste > 0) {
+    morceaux.push(<Text dimColor>{` +${ch.reste}`}</Text>)
+  }
+
+  return (
+    <Box key="progression" flexDirection="column" width="100%">
+      <Box key="progression-titre" flexDirection="row" gap={1}>
+        <Text bold color={fini ? 'success' : undefined}>
+          {p.titre}
+        </Text>
+        <Box key="progression-espace" flexGrow={1} />
+        <Text dimColor>{droite}</Text>
+      </Box>
+      <Box key="progression-barre">{barreDessinee}</Box>
+      <Box key="progression-points" flexDirection="row" gap={2}>
+        <Text>{morceaux}</Text>
+        <Text dimColor>{legende}</Text>
+      </Box>
+    </Box>
+  )
+}
+
 async function bande($: EngineInterface, e: Bande, dessous: RenderElement, modele: string): Promise<RenderElement> {
   const r = await lireReglages($)
   const { Box, Button, Text } = $.ui.resolve(e)
@@ -715,9 +852,20 @@ async function bande($: EngineInterface, e: Bande, dessous: RenderElement, model
   const { value: ouvert = false } = await $.state.get(limitesOuvertes)
   const limites = r.stats && ouvert ? await bandeLimites($, e) : undefined
   const suitesHaut = limites === undefined ? await bandePropositions($, e, r) : undefined
-  const haut = limites?.bloc ?? suitesHaut
-  const rangsHaut =
+  const suite = limites?.bloc ?? suitesHaut
+  const rangsSuite =
     limites !== undefined ? limites.rangs : suitesHaut === undefined ? 0 : r.disposition === 'liste' ? Math.max(1, r.nombre) : 1
+  // La Progression d'une longue tâche passe tout en haut, une ligne vide la sépare de la suite.
+  const prog = await bandeProgression($, e, r)
+  const haut =
+    prog === undefined ? suite : suite === undefined ? prog : (
+      <Box key="haut-progression" flexDirection="column">
+        {prog}
+        <Box key="espace-progression" height={1} />
+        {suite}
+      </Box>
+    )
+  const rangsHaut = (prog === undefined ? 0 : 3) + (prog !== undefined && suite !== undefined ? 1 : 0) + rangsSuite
   const { value: vert = false } = await $.state.get(feuVert)
 
   const ligne = (
@@ -929,6 +1077,21 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
           </Box>
         )
       }
+      case 'progression':
+        return (
+          <Box key="infos" flexDirection="column" gap={1}>
+            {rangee(
+              'exemple',
+              'Essai',
+              <Button key="voir-exemple" label="▶ Voir un exemple" onPress={() => void montrerExemple($)} />,
+            )}
+            <Box key="infos-texte" flexDirection="column">
+              <Text dimColor>Les étapes viennent de la liste de tâches de Claude (TodoWrite, TaskCreate).</Text>
+              <Text dimColor>La barre apparaît en haut de la bande dès qu’une liste existe, et reste 15 s après la fin.</Text>
+              <Text dimColor>● faite · ◉ en cours · ○ restante</Text>
+            </Box>
+          </Box>
+        )
       case 'confirmation': {
         const { value: vert = false } = await $.state.get(feuVert)
         return (
@@ -963,7 +1126,7 @@ async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<
         {await extras(choisi)}
       </Box>
       <Text dimColor>
-        {`Réglages gardés d’une session à l’autre · 1 à 6 : onglets · ${choisi === 'correction' ? 'a / c : boutons affichés' : 'o / f : On / Off'}`}
+        {`Réglages gardés d’une session à l’autre · 1 à 7 : onglets · ${choisi === 'correction' ? 'a / c : boutons affichés' : 'o / f : On / Off'}`}
       </Text>
     </Box>
   )
@@ -1112,11 +1275,54 @@ export const register: Register = (on, options) => {
 
   // Son : le début de la tâche.
   on('turn.start', async ($, e, next) => {
+    const instant = await $.clock.now()
     if (e.text.trim() !== '' || debut === null) {
-      debut = await $.clock.now()
+      debut = instant
+    }
+    // Progression : la tâche continue si sa liste n'est pas finie, sinon une nouvelle commence.
+    const { value: avant = null } = await $.state.get(progression)
+    await $.state.set(progression, demarrer(avant, e.text, instant))
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // Progression : la liste de tâches de Claude (le fil principal seulement, pas les sous-agents).
+  on('tool.call', { tool: 'TodoWrite' }, async ($, e, next) => {
+    const entree = e as unknown as Record<string, unknown>
+    if (e.agentId === undefined && Array.isArray(entree.todos)) {
+      const instant = await $.clock.now()
+      await changerProgression($, p => appliquerTodos(p, entree.todos as Todo[], instant))
     }
     return next(e)
-  })
+  }).catch(($, e, next) => next(e))
+
+  on('tool.call', { tool: 'TaskUpdate' }, async ($, e, next) => {
+    const entree = e as unknown as Record<string, unknown>
+    if (e.agentId === undefined && typeof entree.taskId === 'string') {
+      const id = entree.taskId
+      const champs = {
+        ...(typeof entree.status === 'string' ? { statut: entree.status } : {}),
+        ...(typeof entree.subject === 'string' ? { titre: entree.subject } : {}),
+      }
+      const instant = await $.clock.now()
+      await changerProgression($, p => majEtape(p, id, champs, instant))
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // TaskCreate : l'identifiant de l'étape n'est connu qu'une fois l'outil passé.
+  on('tool.call', { tool: 'TaskCreate' }, async ($, e, next) => {
+    const resultat = await next(e)
+    if (e.agentId === undefined && !('deny' in resultat)) {
+      const entree = e as unknown as Record<string, unknown>
+      const tache = (resultat.result as { task?: { id?: string; subject?: string } } | undefined)?.task
+      if (typeof tache?.id === 'string') {
+        const id = tache.id
+        const titre = tache.subject ?? (typeof entree.subject === 'string' ? entree.subject : 'Étape')
+        await changerProgression($, p => ajouterEtape(p, id, titre))
+      }
+    }
+    return resultat
+  }).catch(($, e, next) => next(e))
 
   // Son et Proposition : la fin de la tâche.
   on('turn.complete', async ($, e, next) => {
@@ -1127,6 +1333,16 @@ export const register: Register = (on, options) => {
       debut = null
       if (r.son) {
         await $.audio.play(SON).catch(() => undefined)
+      }
+    }
+    // Progression : la tâche s'arrête (finie ou en pause) ; une interruption la retire aussitôt.
+    if (!sousAgent) {
+      const fin = await $.clock.now()
+      if (e.reason === 'aborted' || e.reason === 'error') {
+        await changerProgression($, p => ({ ...p, fin: fin - AFFICHAGE_FIN_MS }))
+      } else {
+        await changerProgression($, p => ({ ...p, fin }))
+        redessinerApres($, AFFICHAGE_FIN_MS + 500)
       }
     }
     if (r.proposition && !sousAgent && e.reason === 'answer') {

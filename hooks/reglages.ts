@@ -2,7 +2,15 @@
 
 import type { Disposition, Module, Reglages } from '../types'
 
-export const MODULES: readonly Module[] = ['son', 'relais', 'correction', 'stats', 'proposition', 'confirmation']
+export const MODULES: readonly Module[] = [
+  'son',
+  'relais',
+  'correction',
+  'stats',
+  'proposition',
+  'confirmation',
+  'progression',
+]
 
 export const NOMS: Record<Module, string> = {
   son: 'Son',
@@ -11,6 +19,7 @@ export const NOMS: Record<Module, string> = {
   stats: 'Stats',
   proposition: 'Proposition',
   confirmation: 'Confirmation',
+  progression: 'Progression',
 }
 
 export const ICONES: Record<Module, string> = {
@@ -20,6 +29,7 @@ export const ICONES: Record<Module, string> = {
   stats: '◔',
   proposition: '✦',
   confirmation: '⏸',
+  progression: '▰',
 }
 
 export const DESCRIPTIONS: Record<Module, string> = {
@@ -29,6 +39,7 @@ export const DESCRIPTIONS: Record<Module, string> = {
   stats: 'Montre à droite de la bande le contexte utilisé, en % et en jetons, et la durée de la session.',
   proposition: 'Propose des suites logiques après chaque réponse : un clic en lance une.',
   confirmation: 'Claude résume ce qu’il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit.',
+  progression: 'Suit les longues tâches : une barre fine, et un point par étape de la liste de tâches de Claude.',
 }
 
 export const DEFAUT: Reglages = {
@@ -38,6 +49,7 @@ export const DEFAUT: Reglages = {
   stats: true,
   proposition: true,
   confirmation: false,
+  progression: true,
   ameliorer: true,
   corriger: true,
   nombre: 3,
@@ -72,6 +84,7 @@ export function completer(valeur: unknown): Reglages {
     stats: actif('stats'),
     proposition: actif('proposition'),
     confirmation: actif('confirmation'),
+    progression: actif('progression'),
     ameliorer,
     corriger,
     nombre: typeof v.nombre === 'number' && Number.isFinite(v.nombre) ? borner(v.nombre) : DEFAUT.nombre,
@@ -99,6 +112,9 @@ const ALIAS: Record<string, Module> = {
   cap: 'proposition',
   confirmation: 'confirmation',
   confirmer: 'confirmation',
+  progression: 'progression',
+  progres: 'progression',
+  fil: 'progression',
 }
 
 export function lireModule(mot: string): Module | undefined {
@@ -149,7 +165,7 @@ export const USAGE = [
   'MyConfig :',
   '  /myconfig                         ouvre le panneau des réglages',
   '  /myconfig etat                    résume les réglages',
-  '  /myconfig <module> on | off       son, relais, correction, stats, proposition, confirmation',
+  '  /myconfig <module> on | off       son, relais, correction, stats, proposition, confirmation, progression',
   '  /myconfig proposition 1 à 5       nombre de propositions',
   '  /myconfig proposition ligne | liste   sur une ligne, ou une par ligne',
   '  /myconfig ameliorer | corriger on | off   affiche ou retire un bouton de la Correction',

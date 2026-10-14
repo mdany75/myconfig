@@ -1,5 +1,13 @@
 # Changements
 
+## 0.2.0 — 2026-10-13
+
+### Ajouté
+- Module Progression : pour les longues tâches, un bloc en haut de la bande avec le titre, le %, le
+  temps restant estimé, une barre fine et un point par étape de la liste de tâches de Claude
+  (● faite, ◉ en cours, ○ restante). Une tâche finie reste 15 secondes avec sa coche.
+- Onglet Progression du panneau : On / Off et « ▶ Voir un exemple ».
+
 ## 0.1.0 — 2026-10-13
 
 Première version publiée.

@@ -1,5 +1,5 @@
 /** Les six modules de MyConfig, dans l'ordre des onglets du panneau. */
-export type Module = 'son' | 'relais' | 'correction' | 'stats' | 'proposition' | 'confirmation'
+export type Module = 'son' | 'relais' | 'correction' | 'stats' | 'proposition' | 'confirmation' | 'progression'
 
 /** Les propositions côte à côte (`ligne`) ou une par ligne (`liste`). */
 export type Disposition = 'ligne' | 'liste'
@@ -13,6 +13,7 @@ export type Reglages = {
   stats: boolean
   proposition: boolean
   confirmation: boolean
+  progression: boolean
   /** Bouton « ✎ Améliorer » affiché dans la bande. */
   ameliorer: boolean
   /** Bouton « ✓ Correction » affiché dans la bande. */
@@ -44,6 +45,27 @@ export type Mesure = {
   contexte: number | null
   /** Les limites d'utilisation du forfait ; vide hors abonnement ou avant la première réponse. */
   limites: Limite[]
+}
+
+/** Une étape de la liste de tâches de Claude, avec ses heures (millisecondes). */
+export type EtapeProgression = {
+  /** L'identifiant de TaskCreate, ou `todo-<n>` pour une étape de TodoWrite. */
+  id: string
+  titre: string
+  statut: 'attente' | 'en_cours' | 'faite'
+  debut: number | null
+  fin: number | null
+}
+
+/** La tâche longue en cours : son titre (la consigne), ses étapes, son début et sa fin. */
+export type Progression = {
+  titre: string
+  debut: number
+  /** Fin du tour qui l'a terminée ou mise en pause ; rien tant qu'elle tourne. */
+  fin: number | null
+  etapes: EtapeProgression[]
+  /** Vrai pour l'exemple du panneau, qui ne suit aucune vraie tâche. */
+  exemple: boolean
 }
 
 /**
@@ -82,6 +104,8 @@ declare module 'claude-code' {
       etapeRelais: EtapeRelais
       /** Vrai quand le dernier message de l'utilisateur donne le feu vert (module Confirmation). */
       feuVert: boolean
+      /** La tâche longue suivie par le module Progression, ou rien. */
+      progression: Progression | null
     }
   }
 }

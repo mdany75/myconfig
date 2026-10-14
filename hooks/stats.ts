@@ -72,16 +72,17 @@ export function remplissage(p: number, largeur: number) {
 }
 
 export const BLEU = '#3b82f6'
+export const VERT = '#2ea043'
 
-// La barre de l'app de bureau : un rail gris arrondi, la part utilisée en bleu.
-export function barre(p: number, largeur: number) {
+// La barre de l'app de bureau : un rail gris arrondi, la part utilisée en bleu (ou `teinte`).
+export function barre(p: number, largeur: number, teinte: string = BLEU) {
   const h = 6
   const part = Math.min(100, Math.max(0, p)) / 100
   const plein = part === 0 ? 0 : Math.max(h, Math.round(largeur * part))
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${largeur}" height="${h}" viewBox="0 0 ${largeur} ${h}">` +
     `<rect width="${largeur}" height="${h}" rx="${h / 2}" fill="#8b949e" fill-opacity="0.25"/>` +
-    (plein > 0 ? `<rect width="${plein}" height="${h}" rx="${h / 2}" fill="${BLEU}"/>` : '') +
+    (plein > 0 ? `<rect width="${plein}" height="${h}" rx="${h / 2}" fill="${teinte}"/>` : '') +
     `</svg>`
   )
 }

@@ -4,6 +4,17 @@ import type { On } from 'claude-code'
 
 import { estFeuVert, NOTE_ATTENTE, NOTE_FEU_VERT, REFUS, SECTION } from '../hooks/confirmation'
 import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE } from '../hooks/correction'
+import {
+  appliquerTodos,
+  chapelet,
+  compter,
+  demarrer,
+  majEtape,
+  nouvelle,
+  pourcentage,
+  resteEstime,
+  visible,
+} from '../hooks/progression'
 import { consigne, extraire } from '../hooks/proposition'
 import { appliquer, completer, DEFAUT } from '../hooks/reglages'
 import { couleur, delai, glyphe, jetons, minutes, nomLimite, remplissage, trierLimites } from '../hooks/stats'
@@ -162,6 +173,100 @@ describe('fonctions pures', () => {
     expect(glyphe(34)).toBe('◔')
     expect(glyphe(null)).toBe('○')
   })
+})
+
+const TODOS = ['Lire', 'Analyser', 'Convertir', 'Valider', 'Tester', 'Documenter', 'Publier'].map((content, i) => ({
+  content,
+  status: (i < 3 ? 'completed' : i === 3 ? 'in_progress' : 'pending') as 'pending' | 'in_progress' | 'completed',
+  activeForm: content,
+}))
+
+describe('la Progression (fonctions pures)', () => {
+  test('la liste de tâches donne les étapes, le %, le chapelet', () => {
+    const p = appliquerTodos(nouvelle('Migration des presets', 0), TODOS, 60_000)
+    expect(compter(p)).toEqual({ faites: 3, total: 7, courante: p.etapes[3], rang: 4 })
+    expect(pourcentage(p)).toBe(50)
+    expect(chapelet(p)).toEqual({ faits: '● ● ●', courant: '◉', restants: '○ ○ ○', reste: 0 })
+    expect(resteEstime(p, 4 * 60_000)).toBe('~4 min')
+    expect(resteEstime(nouvelle('x', 0), 60_000)).toBe('')
+  })
+
+  test('une liste inachevée continue au tour suivant, une liste finie laisse place à la suivante', () => {
+    const p = appliquerTodos(nouvelle('Migration', 0), TODOS, 0)
+    expect(demarrer({ ...p, fin: 5 }, 'oui, continue', 10).titre).toBe('Migration')
+    const finie = appliquerTodos(p, TODOS.map(t => ({ ...t, status: 'completed' as const })), 20)
+    expect(demarrer(finie, 'Autre chose', 30).titre).toBe('Autre chose')
+    expect(majEtape(p, 'todo-6', { statut: 'deleted' }, 0).etapes).toHaveLength(6)
+  })
+
+  test('visible pendant la tâche, puis 15 secondes après sa fin', () => {
+    const p = appliquerTodos(nouvelle('x', 0), TODOS, 0)
+    expect(visible(nouvelle('sans étapes', 0), 0)).toBe(false)
+    expect(visible(p, 999_999)).toBe(true)
+    expect(visible({ ...p, fin: 1000 }, 15_000)).toBe(true)
+    expect(visible({ ...p, fin: 1000 }, 17_000)).toBe(false)
+  })
+})
+
+// Le moteur sous le mod pour les tours et les outils.
+function simulerTours(on: On) {
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('tool.call', () => ({ result: {}, text: 'ok' }))
+}
+
+describe('la Progression dans la bande', () => {
+  for (const surface of SURFACES) {
+    test(`suit la liste de tâches, puis reste 15 s avec sa coche (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      simulerTours(on)
+      await $.turn.start({ text: 'Migration des presets', turnId: 't1' })
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
+      expect(await ui.find({ key: 'progression' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Migration des presets' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^50 %/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Étape 4 sur 7 · Valider' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '● ● ●' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: ' ◉' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: ' ○ ○ ○' })).toBeDefined()
+      const arbre = JSON.stringify(await ui.drawn())
+      expect(arbre.indexOf('"progression"')).toBeLessThan(arbre.indexOf('"ligne"'))
+
+      await horloge.advance(3 * 60_000)
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u2', todos: TODOS.map(t => ({ ...t, status: 'completed' as const })) })
+      await $.turn.complete({ reason: 'answer', answer: 'fait', durationMs: 0, isAborted: false, turnId: 't1' })
+      expect(await ui.find({ type: 'Text', text: /^✓ 7 étapes · 3 min/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Toutes les étapes sont faites' })).toBeDefined()
+
+      await horloge.advance(16_000)
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+      await ui.unmount()
+    })
+
+    test(`à Off, rien ne s’affiche ; l’exemple du panneau dure 20 s (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      simulerTours(on)
+      await myconfig($, 'progression off')
+      await $.turn.start({ text: 'Migration', turnId: 't1' })
+      await $.tool.call({ tool: 'TodoWrite', tool_use_id: 'u1', todos: TODOS })
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+
+      await myconfig($, 'progression on')
+      await $.turn.complete({ reason: 'answer', answer: '', durationMs: 0, isAborted: false, turnId: 't1' })
+      await horloge.advance(16_000)
+      const pane = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      await pane.press({ key: 'onglet-progression' })
+      await pane.press({ key: 'voir-exemple' })
+      expect(await ui.find({ type: 'Text', text: 'Migration des presets (exemple)' })).toBeDefined()
+      await horloge.advance(21_000)
+      expect(await ui.find({ key: 'progression' })).toBeUndefined()
+      await pane.unmount()
+      await ui.unmount()
+    })
+  }
 })
 
 describe('la bande', () => {
@@ -355,7 +460,7 @@ describe('le panneau', () => {
     test(`six onglets, et chaque réglage est gardé dans le store (${surface})`, async ($, on) => {
       simuler(on)
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
-      for (const m of ['son', 'relais', 'correction', 'stats', 'proposition', 'confirmation']) {
+      for (const m of ['son', 'relais', 'correction', 'stats', 'proposition', 'confirmation', 'progression']) {
         expect(await ui.find({ type: 'Button', key: `onglet-${m}` })).toBeDefined()
       }
       expect(await ui.find({ type: 'Button', key: 'tester' })).toBeDefined()
