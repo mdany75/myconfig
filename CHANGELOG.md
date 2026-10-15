@@ -1,5 +1,13 @@
 # Changements
 
+## 1.1.1 — 2026-10-15
+
+### Corrigé
+- Progression : le journal déplié coupait les titres longs à 48 caractères (« Chercher les erreurs
+  du mod dans le journal de … ») ; il montre de nouveau le titre en entier, sur plusieurs rangées au
+  besoin, comme promis par Journal 1. Seul « En cours », sur une ligne, le coupe encore à 48
+  caractères. Un titre trop haut pour toute la place de la bande, montré seul, est coupé pour tenir.
+
 ## 1.1.0 — 2026-10-15
 
 ### Ajouté

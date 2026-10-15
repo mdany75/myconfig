@@ -110,6 +110,9 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   Journal 1 (choix de Dany) : l'outil, puis le titre entier (`titreJournal`, sans le complément en
   gris), coupé sur plusieurs rangées (`wrap="wrap"`) ; `pageJournal` prend la plus grande page dont
   les titres tiennent dans les rangées (`rangeesTexte`), et sa `taille` sert de pas à ▲ et ▼.
+  `decrireOutil` garde la première ligne entière du libellé (garde-fou `LIBELLE_MAX`) ; seuls
+  `titreAction` (« En cours », une ligne, `TITRE_ACTION_MAX`) et une action montrée seule, plus
+  haute que la place (`tenirEnRangees`, les `titres` de `pageJournal`), coupent le titre.
   Plus d'actions que de place : « ▲ » (`journal-haut`, à la place du trait) et « ▼ » (`journal-bas`)
   feuillettent par pages ; `journalAncre` garde l'id de la première action montrée (`null` : les
   dernières), remis à `null` quand le journal se replie ou se rouvre.

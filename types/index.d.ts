@@ -107,9 +107,12 @@ export type BlocAction = {
 export type DescriptionAction = {
   /** L'outil : « Bash », « Read », « github · create_issue ». */
   nom: string
-  /** Ce qu'il touche, en court : la description de la commande, le fichier, le motif ; vide sinon. */
+  /**
+   * Ce qu'il touche : la description de la commande, le fichier, le motif ; vide sinon. Sa première
+   * ligne entière (au plus `LIBELLE_MAX` caractères) : seul « En cours » la coupe.
+   */
   libelle: string
-  /** Le détail : la commande, le dossier du fichier ; vide s'il n'apporte rien. */
+  /** Le détail : la commande, le dossier du fichier ; vide s'il n'apporte rien. Première ligne, au plus `LIBELLE_MAX`. */
   complement: string
 }
 

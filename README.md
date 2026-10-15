@@ -138,7 +138,9 @@ dessous qui prend le clic.
 
 - Chaque action (Journal 1) : ✓ faite ou ◉ en cours, l'outil (point de la couleur de sa sorte), son
   titre en entier, sur plusieurs lignes au besoin (le fichier, la description de la commande, le
-  motif), et sa durée. Quand de longs titres prennent plus de place, la page compte moins d'actions.
+  motif), et sa durée. Quand de longs titres prennent plus de place, la page compte moins d'actions ;
+  seul un titre trop haut pour toute la place de la bande est coupé (« … »). « En cours », sur une
+  ligne, le coupe à 48 caractères.
 - Plus d'actions que de place : « ▲ N actions plus anciennes » remplace le trait au-dessus du
   journal, avec la position à droite (« 4–6 sur 12 ») ; un clic recule d'une page (autant d'actions
   que le « Détail »), et « ▼ N plus récentes », dessous, avance. La page reste en place quand de

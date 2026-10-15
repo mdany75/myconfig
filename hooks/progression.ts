@@ -311,6 +311,13 @@ export const NOMS_SORTES: Record<SorteAction, string> = {
 export const JOURNAL_MAX = 200
 export const JOURNAL_LIGNES = 6
 
+/**
+ * Le libellé et le détail gardent leur première ligne entière, jusqu'à ce garde-fou (une commande
+ * d'une ligne immense ne remplit pas `$.state`) ; « En cours » coupe le libellé à TITRE_ACTION_MAX.
+ */
+export const LIBELLE_MAX = 300
+export const TITRE_ACTION_MAX = 48
+
 const premiereLigne = (s: string) => s.split('\n')[0]?.trim() ?? ''
 const couper = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
@@ -345,10 +352,12 @@ export function decrireOutil(outil: string, entree: Record<string, unknown>): De
     complement = texte('subagent_type')
   }
   const nom = outil.startsWith('mcp__') ? outil.split('__').slice(1).join(' · ') : outil
-  return { nom, libelle: couper(premiereLigne(libelle), 48), complement: couper(complement, 80) }
+  return { nom, libelle: couper(premiereLigne(libelle), LIBELLE_MAX), complement: couper(complement, LIBELLE_MAX) }
 }
 
-export const titreAction = (d: DescriptionAction) => (d.libelle === '' ? d.nom : `${d.nom} · ${d.libelle}`)
+/** L'action en une ligne (« En cours », le titre d'un segment) : le libellé y est coupé. */
+export const titreAction = (d: DescriptionAction) =>
+  d.libelle === '' ? d.nom : `${d.nom} · ${couper(d.libelle, TITRE_ACTION_MAX)}`
 
 /** L'outil en clair, pour « En cours » (repris de fil). */
 export const libelleOutil = (outil: string, entree: Record<string, unknown>) => titreAction(decrireOutil(outil, entree))
@@ -457,10 +466,32 @@ export function rangeesTexte(texte: string, colonnes: number): number {
   return rangees
 }
 
+/** Le texte entier s'il tient dans `rangees` rangées de `colonnes` colonnes ; sinon coupé (« … ») pour y tenir. */
+export function tenirEnRangees(texte: string, colonnes: number, rangees: number): string {
+  if (rangeesTexte(texte, colonnes) <= rangees) {
+    return texte
+  }
+  const lettres = [...texte]
+  const coupe = (n: number) => `${lettres.slice(0, n).join('').trimEnd()}…`
+  // La plus longue coupe qui tient : une coupe plus longue ne prend jamais moins de rangées.
+  let bas = 0
+  let haut = lettres.length - 1
+  while (bas < haut) {
+    const milieu = Math.ceil((bas + haut) / 2)
+    if (rangeesTexte(coupe(milieu), colonnes) <= rangees) {
+      bas = milieu
+    } else {
+      haut = milieu - 1
+    }
+  }
+  return coupe(bas)
+}
+
 /**
  * Journal 1 : chaque titre en entier, sur plusieurs rangées au besoin. La plus grande page d'au
  * plus `max` actions dont les titres tiennent dans `rangees` rangées (au moins une action) ;
- * `colonnes` : la place du titre avant la durée. `taille` sert de pas à ▲ et ▼.
+ * `colonnes` : la place du titre avant la durée. `taille` sert de pas à ▲ et ▼. Seul le titre
+ * d'une action montrée seule et plus haute que `rangees` est coupé, pour tenir.
  */
 export function pageJournal(
   p: Progression,
@@ -470,13 +501,14 @@ export function pageJournal(
   colonnes: number,
   ancre: string | null = null,
 ) {
-  const hauteurDe = (l: LigneJournal) => rangeesTexte(titreJournal(l), colonnes - 1 - duree(l.duree).length)
+  const largeurDe = (l: LigneJournal) => colonnes - 1 - duree(l.duree).length
   for (let taille = Math.max(1, Math.min(max, rangees, JOURNAL_MAX)); ; taille--) {
     const page = lignesJournal(p, maintenant, taille, ancre)
-    const hauteurs = page.lignes.map(hauteurDe)
+    const titres = page.lignes.map(l => tenirEnRangees(titreJournal(l), largeurDe(l), taille === 1 ? rangees : Infinity))
+    const hauteurs = page.lignes.map((l, i) => rangeesTexte(titres[i] ?? '', largeurDe(l)))
     const hauteur = hauteurs.reduce((t, h) => t + h, 0)
     if (hauteur <= rangees || taille === 1) {
-      return { ...page, taille, hauteurs, hauteur }
+      return { ...page, taille, titres, hauteurs, hauteur }
     }
   }
 }

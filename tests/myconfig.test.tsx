@@ -20,6 +20,7 @@ import {
   demarrer,
   finirAction,
   JOURNAL_MAX,
+  LIBELLE_MAX,
   libelleOutil,
   lignesJournal,
   majEtape,
@@ -33,6 +34,7 @@ import {
   resteEstime,
   segmentsPiste,
   sorteDe,
+  tenirEnRangees,
   titreDe,
   totalActions,
   visible,
@@ -83,6 +85,9 @@ const panneau = {
 } as const
 
 const USAGE = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+
+// Un titre d'action plus long que les 48 caractères d'« En cours ».
+const LONG_TITRE = 'Chercher les erreurs du mod dans le journal de Claude Code et les résumer'
 
 const SUITES = ['Lance les tests', 'Ajoute un README', "Corrige l'erreur 42", 'Publie la version', 'Refais la capture']
 
@@ -576,6 +581,20 @@ describe('la Progression sans liste (fonctions pures)', () => {
     expect(libelleOutil('Bash', bash)).toBe('Bash · Lance les tests')
   })
 
+  test('un long titre : entier pour le journal, coupé seulement pour « En cours »', () => {
+    const chercher = { command: 'grep -i error ~/.claude/debug/latest', description: `${LONG_TITRE}\nsuite` }
+    expect(decrireOutil('Bash', chercher)).toEqual({
+      nom: 'Bash',
+      libelle: LONG_TITRE,
+      complement: 'grep -i error ~/.claude/debug/latest',
+    })
+    expect(libelleOutil('Bash', chercher)).toBe('Bash · Chercher les erreurs du mod dans le journal de …')
+    // Un garde-fou pour une commande d'une ligne immense.
+    const immense = decrireOutil('Bash', { command: `echo ${'x'.repeat(1_000)}` }).libelle
+    expect(immense).toHaveLength(LIBELLE_MAX)
+    expect(immense.endsWith('…')).toBe(true)
+  })
+
   test('le journal : les dernières actions, leur durée, celle en cours', () => {
     const lire = { nom: 'Read', libelle: 'README.md', complement: '~/x' }
     let p = nouvelle('Publie', 0)
@@ -637,6 +656,12 @@ describe('la Progression sans liste (fonctions pures)', () => {
     expect(rangeesTexte('Lance les tests', 9)).toBe(2)
     expect(rangeesTexte('abcdefghijklmnopqrstuvwxyz', 10)).toBe(3)
     expect(rangeesTexte('ab abcdefghijklmnopqrstuvwxyz', 10)).toBe(4)
+    // Coupé seulement quand il ne tient pas dans ses rangées.
+    expect(tenirEnRangees(LONG_TITRE, 36, 3)).toBe(LONG_TITRE)
+    const coupe = tenirEnRangees(LONG_TITRE, 36, 2)
+    expect(coupe).toBe('Chercher les erreurs du mod dans le journal de Claude Code et les résum…')
+    expect(rangeesTexte(coupe, 36)).toBe(2)
+    expect(tenirEnRangees('abcdefghijklmnopqrstuvwxyz', 10, 1)).toBe('abcdefghi…')
   })
 
   test('une page du journal tient dans ses rangées, même avec de longs titres', () => {
@@ -649,12 +674,16 @@ describe('la Progression sans liste (fonctions pures)', () => {
     // Assez de place : 6 actions, les longues sur 2 rangées.
     const large = pageJournal(p, 9_000, 6, 12, 60)
     expect(large).toMatchObject({ taille: 6, hauteur: 9 })
+    expect(large.titres.filter(t => t === long)).toHaveLength(3)
     // Moins de rangées : la page se raccourcit, les dernières actions d'abord.
     const serre = pageJournal(p, 9_000, 6, 5, 60)
     expect(serre.hauteur).toBeLessThanOrEqual(5)
     expect(serre.lignes.at(-1)?.id).toBe('a5')
-    // Au moins une action, même trop longue.
+    // Au moins une action, même trop longue : seul son titre est alors coupé, pour tenir.
     expect(pageJournal(p, 9_000, 6, 1, 20).taille).toBe(1)
+    const seule = pageJournal(p, 9_000, 6, 2, 20, 'a4')
+    expect(seule).toMatchObject({ taille: 1, hauteur: 2 })
+    expect(seule.titres[0]?.endsWith('…')).toBe(true)
   })
 })
 
@@ -749,6 +778,38 @@ describe('la Progression sans liste dans la bande', () => {
 
       await ui.press({ key: 'progression-detail' })
       expect(await ui.find({ key: 'progression-journal' })).toBeUndefined()
+      await ui.unmount()
+    })
+
+    test(`un long titre reste entier dans le journal, sur plusieurs rangées ; « En cours » le coupe (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+      let enCoursVu = false
+      let chercher: ((texte: string) => Promise<boolean>) | undefined
+      on('tool.call', async (_$, e) => {
+        await horloge.advance(e.tool === 'Bash' ? 4_000 : 1_000)
+        if (e.tool === 'Bash' && chercher !== undefined) {
+          enCoursVu = await chercher('En cours : Bash · Chercher les erreurs du mod dans le journal de …')
+        }
+        return { result: {}, text: 'ok' }
+      })
+      // Une bande étroite : le titre y prend 3 rangées, sur les 3 que le journal a.
+      const etroite = { ...bande, props: { ...bande.props, bodyColumns: 60 } }
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...etroite })
+      chercher = async texte => (await ui.find({ type: 'Text', text: texte })) !== undefined
+      await $.turn.start({ text: 'Cherche les erreurs', turnId: 't1' })
+      await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/x/README.md' })
+      await $.tool.call({ tool: 'Bash', tool_use_id: 'b1', command: 'grep -i error ~/.claude/debug/latest', description: LONG_TITRE })
+      expect(enCoursVu).toBe(true)
+
+      await ui.press({ key: 'progression-detail' })
+      const titre = await ui.find({ type: 'Text', text: LONG_TITRE })
+      expect(titre?.props.wrap).toBe('wrap')
+      expect(await ui.find({ type: 'Text', text: /journal de …/ })).toBeUndefined()
+      // Ses 3 rangées comptent : la lecture d'avant passe à la page précédente.
+      expect(await ui.find({ type: 'Text', text: 'README.md' })).toBeUndefined()
+      expect((await ui.find({ type: 'Button', key: 'journal-haut' }))?.props.label).toBe('▲ 1 action plus ancienne')
+      expect(await ui.find({ type: 'Text', text: '2–2 sur 2' })).toBeDefined()
       await ui.unmount()
     })
 

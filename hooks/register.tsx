@@ -59,7 +59,6 @@ import {
   TEINTES_SORTES,
   terminee,
   titreAction,
-  titreJournal,
   totalActions,
   VERT_FIN,
   visible,
@@ -1201,7 +1200,8 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
 // Le journal déplié d'un clic sous la barre (croquis 1) : les dernières actions, la plus récente
 // en bas ; ✓ faite, ◉ en cours (l'app de bureau dessine une image fixe : pas de roue qui tourne).
 // Journal 1 : l'outil, puis le titre entier (sans le détail en gris), sur plusieurs rangées au
-// besoin ; au plus `max` actions, dans `place` rangées.
+// besoin ; au plus `max` actions, dans `place` rangées. Seule une action montrée seule et plus
+// haute que `place` voit son titre coupé (`pageJournal`).
 function journalDe(
   $: EngineInterface,
   e: Bande,
@@ -1214,7 +1214,7 @@ function journalDe(
   const { Box, Button, Text } = $.ui.resolve(e)
   const largeur = Math.max(10, e.props.bodyColumns - 4)
   // Le titre a ce qui reste après l'état, l'outil (12) et trois espaces ; la durée se retire ensuite.
-  const { lignes, avant, apres, debut, total, taille, hauteur } = pageJournal(p, instant, max, place, largeur - 16, ancre)
+  const { lignes, titres, avant, apres, debut, total, taille, hauteur } = pageJournal(p, instant, max, place, largeur - 16, ancre)
   const rangees: RenderElement[] = lignes.map((l, i) => (
     <Box key={`journal-${i}`} flexDirection="row" gap={1} width="100%">
       <Box key={`journal-${i}-etat`} width={1} flexShrink={0}>
@@ -1228,7 +1228,7 @@ function journalDe(
       </Box>
       <Box key={`journal-${i}-quoi`} flexGrow={1} flexShrink={1}>
         <Text wrap="wrap" bold={l.enCours}>
-          {titreJournal(l)}
+          {titres[i]}
         </Text>
       </Box>
       <Box key={`journal-${i}-duree`} flexShrink={0}>
