@@ -5,7 +5,18 @@ import type { On, SessionContextUsage } from 'claude-code'
 import { estFeuVert, NOTE_ATTENTE, NOTE_FEU_VERT, REFUS, SECTION } from '../hooks/confirmation'
 import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE } from '../hooks/correction'
 import { SECTION as SECTION_CROQUIS } from '../hooks/croquis'
-import { lireVersion, messageMiseAJour, statutVersion } from '../hooks/mise-a-jour'
+import {
+  cheminDansMarketplace,
+  commandesMarketplace,
+  copieMarketplace,
+  dossierMarketplace,
+  echecMarketplace,
+  lireResultat,
+  lireVersion,
+  messageMiseAJour,
+  retardMarketplace,
+  statutVersion,
+} from '../hooks/mise-a-jour'
 import {
   actionCourante,
   appliquerTodos,
@@ -1405,6 +1416,203 @@ describe('la mise à jour depuis GitHub (onglet Général, Croquis 4)', () => {
     await ui.press({ key: 'recharger' })
     await horloge.advance(10)
     expect(git.recharges).toEqual(['reload-plugins'])
+    await ui.unmount()
+  })
+
+  test('un dossier pris dans un dépôt plus grand n’est pas un clone : ni fetch ni pull', async ($, on) => {
+    const horloge = simuler(on)
+    const appels: string[] = []
+    on('process.run', (_$, e) => {
+      appels.push(e.argv.join(' '))
+      const stdout = e.argv.join(' ') === 'git rev-parse --show-prefix' ? 'plugins/myconfig/\n' : ''
+      return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    })
+    on('fs.read', () => ({ value: JSON.stringify({ version: '0.9.0' }) }))
+    const toasts: string[] = []
+    on('ui.toast', (_$, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    const ui = await $.ui.mount({ plugin: 'myconfig', surface: 'terminal', ...panneau })
+    await ui.press({ key: 'onglet-son' })
+    await horloge.advance(10)
+    expect(await ui.find({ type: 'Text', text: 'pas un clone git' })).toBeDefined()
+    await ui.press({ key: 'mettre-a-jour' })
+    await horloge.advance(10)
+    expect(appels).not.toContain('git fetch --quiet origin')
+    expect(appels).not.toContain('git pull --ff-only --quiet')
+    expect(toasts).toEqual(['MyConfig : le dossier du mod n’est pas un dépôt git ; mise à jour impossible.'])
+    await ui.unmount()
+  })
+})
+
+describe('la mise à jour d’une copie du marketplace (Croquis 1)', () => {
+  const PLUGINS = '/Users/test/.claude/plugins'
+  const RACINE = `${PLUGINS}/cache/myconfig/myconfig/1.1.1`
+  const DOSSIER = `${PLUGINS}/marketplaces/myconfig`
+  const CLAUDE = '/Applications/Claude.app/Contents/MacOS/claude'
+  const COPIE = { plugins: PLUGINS, marketplace: 'myconfig', plugin: 'myconfig' }
+
+  test('les fonctions : copie, dossier du marketplace, chemin, retard, commandes, réponse', () => {
+    expect(copieMarketplace(RACINE)).toEqual(COPIE)
+    expect(copieMarketplace(`${RACINE}/`)).toEqual(COPIE)
+    expect(copieMarketplace('/Users/dany/Developer/Plugins/myconfig')).toBe(null)
+    expect(copieMarketplace(`${PLUGINS}/marketplaces/myconfig`)).toBe(null)
+
+    const connus = JSON.stringify({ myconfig: { installLocation: '/ailleurs/myconfig' } })
+    expect(dossierMarketplace(connus, COPIE)).toBe('/ailleurs/myconfig')
+    expect(dossierMarketplace(JSON.stringify({ autre: {} }), COPIE)).toBe(DOSSIER)
+    expect(dossierMarketplace(null, COPIE)).toBe(DOSSIER)
+
+    const catalogue = (source: unknown) => JSON.stringify({ plugins: [{ name: 'myconfig', source }] })
+    expect(cheminDansMarketplace(catalogue('./'), 'myconfig')).toBe('')
+    expect(cheminDansMarketplace(catalogue('./plugins/myconfig/'), 'myconfig')).toBe('plugins/myconfig/')
+    expect(cheminDansMarketplace(catalogue({ source: 'github', repo: 'x/y' }), 'myconfig')).toBe(null)
+    expect(cheminDansMarketplace(catalogue('./'), 'autre')).toBe(null)
+    expect(cheminDansMarketplace('pas du json', 'myconfig')).toBe(null)
+
+    expect(retardMarketplace('1.1.1', '1.2.0')).toBe(1)
+    expect(retardMarketplace('1.1.1', '1.1.1')).toBe(0)
+    expect(retardMarketplace('1.1.1', null)).toBe(0)
+
+    expect(commandesMarketplace(COPIE)).toEqual([
+      ['plugin', 'marketplace', 'update', 'myconfig', '--json'],
+      ['plugin', 'update', 'myconfig@myconfig', '--json'],
+    ])
+
+    const json = (v: unknown, exitCode = 0, stderr = '') => ({ exitCode, stdout: `Bavardage…\n${JSON.stringify(v)}\n`, stderr })
+    expect(lireResultat(json({ outcome: 'ok', updateOutcome: 'updated', oldVersion: '1.1.1', newVersion: '1.2.0', message: 'x' })))
+      .toEqual({ ok: true, message: 'x', avant: '1.1.1', apres: '1.2.0', change: true })
+    expect(lireResultat(json({ outcome: 'ok', updateOutcome: 'up_to_date', oldVersion: '1.1.1', newVersion: '1.1.1' })))
+      .toMatchObject({ ok: true, change: false })
+    expect(lireResultat(json({ outcome: 'ok', updateOutcome: 'skipped' }))).toMatchObject({ ok: true, change: false })
+    expect(lireResultat(json({ outcome: 'error', message: 'Plugin introuvable\nDétail' }, 1)))
+      .toMatchObject({ ok: false, message: 'Plugin introuvable' })
+    expect(lireResultat({ exitCode: 1, stdout: '', stderr: 'command not found\n' })).toMatchObject({ ok: false, message: 'command not found' })
+    // Sans réponse lisible, on suppose un changement : le rechargement ne coûte rien.
+    expect(lireResultat({ exitCode: 0, stdout: 'fait\n', stderr: '' })).toMatchObject({ ok: true, change: true })
+
+    expect(echecMarketplace(COPIE, 'hors ligne')).toBe(
+      'MyConfig : la mise à jour a échoué (hors ligne). Dans un terminal : claude plugin marketplace update myconfig, ' +
+        'puis claude plugin update myconfig@myconfig.',
+    )
+    expect(statutVersion(null, 'marketplace')).toMatchObject({ texte: 'marketplace…', disponible: false })
+  })
+
+  // Une copie du marketplace, simulée : sa racine dans le cache des mods, le clone du marketplace
+  // (sa branche suivie porte `distante`) et les réponses de `claude plugin … --json`.
+  function simulerMarketplace(on: On, monde: { distante: string; misAJour?: Record<string, unknown> }) {
+    const appels: { commande: string; cwd: string | undefined }[] = []
+    const etapes: unknown[] = []
+    const sortie = (stdout: string, exitCode = 0, stderr = '') => ({
+      value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false },
+    })
+    on('fs.stat', () => ({ value: { kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false, realPath: RACINE } }))
+    on('fs.read', (_$, e) =>
+      e.path === `${PLUGINS}/known_marketplaces.json`
+        ? { value: JSON.stringify({ myconfig: { source: { source: 'github', repo: 'mdany75/myconfig' }, installLocation: DOSSIER } }) }
+        : { value: JSON.stringify({ name: 'myconfig', version: '1.1.1' }) },
+    )
+    on('env.get', () => ({ value: CLAUDE }))
+    on('process.run', (_$, e) => {
+      const commande = e.argv.join(' ')
+      appels.push({ commande, cwd: e.init?.cwd })
+      if (commande === 'git show @{u}:.claude-plugin/marketplace.json') {
+        return sortie(JSON.stringify({ name: 'myconfig', plugins: [{ name: 'myconfig', source: './' }] }))
+      }
+      if (commande === 'git show @{u}:.claude-plugin/plugin.json') return sortie(JSON.stringify({ version: monde.distante }))
+      if (commande === `${CLAUDE} plugin marketplace update myconfig --json`) {
+        return sortie(`${JSON.stringify({ command: 'marketplace-update', outcome: 'ok', marketplace: 'myconfig' })}\n`)
+      }
+      if (commande === `${CLAUDE} plugin update myconfig@myconfig --json`) {
+        const changement = monde.distante !== '1.1.1'
+        const r = monde.misAJour ?? {
+          command: 'update',
+          outcome: 'ok',
+          updateOutcome: changement ? 'updated' : 'up_to_date',
+          oldVersion: '1.1.1',
+          newVersion: monde.distante,
+        }
+        return sortie(`${JSON.stringify(r)}\n`, r.outcome === 'ok' ? 0 : 1)
+      }
+      return sortie('')
+    })
+    on('state.set', { plugin: 'myconfig', key: 'miseAJour' }, (_$, e, next) => {
+      etapes.push(e.value)
+      return next(e)
+    })
+    const toasts: string[] = []
+    on('ui.toast', (_$, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    const recharges: string[] = []
+    on('command.run', { command: 'reload-plugins' }, () => {
+      recharges.push('reload-plugins')
+      return { text: '' }
+    })
+    return { appels, commandes: () => appels.map(a => a.commande), etapes, toasts, recharges }
+  }
+
+  for (const surface of SURFACES) {
+    test(`une version plus récente : relire le marketplace, mettre à jour le mod, recharger (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      const m = simulerMarketplace(on, { distante: '1.2.0' })
+      const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
+      await ui.press({ key: 'onglet-son' })
+      await horloge.advance(10)
+      // GitHub se lit dans le clone du marketplace, jamais dans la copie.
+      expect(m.appels.filter(a => a.commande.startsWith('git ')).every(a => a.cwd === DOSSIER)).toBe(true)
+      expect(m.commandes()).toContain('git fetch --quiet origin')
+      expect(await ui.find({ type: 'Text', text: '1.1.1' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: '→ 1.2.0 disponible' })).toBeDefined()
+      expect((await ui.find({ type: 'Button', key: 'mettre-a-jour' }))?.props).toMatchObject({
+        label: '⬇ Mettre à jour et recharger',
+        variant: 'primary',
+      })
+
+      await ui.press({ key: 'mettre-a-jour' })
+      await horloge.advance(10)
+      const claude = m.commandes().filter(c => c.startsWith(CLAUDE))
+      expect(claude).toEqual([
+        `${CLAUDE} plugin marketplace update myconfig --json`,
+        `${CLAUDE} plugin update myconfig@myconfig --json`,
+      ])
+      expect(m.commandes()).not.toContain('git pull --ff-only --quiet')
+      expect(m.etapes.filter(v => v !== null && v !== 'verification')).toEqual(['marketplace', 'mise-a-jour', 'rechargement'])
+      expect(m.toasts).toContain('MyConfig : 1.1.1 → 1.2.0, rechargement des mods…')
+      expect(m.recharges).toEqual(['reload-plugins'])
+      expect(await ui.find({ type: 'Text', text: 'à jour' })).toBeDefined()
+      await ui.unmount()
+    })
+  }
+
+  test('même version que GitHub : « à jour », et pas de rechargement', async ($, on) => {
+    const horloge = simuler(on)
+    const m = simulerMarketplace(on, { distante: '1.1.1' })
+    const ui = await $.ui.mount({ plugin: 'myconfig', surface: 'terminal', ...panneau })
+    await ui.press({ key: 'onglet-son' })
+    await horloge.advance(10)
+    expect(await ui.find({ type: 'Text', text: 'à jour' })).toBeDefined()
+    expect((await ui.find({ type: 'Button', key: 'mettre-a-jour' }))?.props).toMatchObject({ variant: 'secondary' })
+    await ui.press({ key: 'mettre-a-jour' })
+    await horloge.advance(10)
+    expect(m.toasts).toEqual(['MyConfig : déjà à jour (1.1.1).'])
+    expect(m.recharges).toEqual([])
+    await ui.unmount()
+  })
+
+  test('un échec de « claude plugin update » le dit, avec la voie à la main, sans recharger', async ($, on) => {
+    const horloge = simuler(on)
+    const m = simulerMarketplace(on, {
+      distante: '1.2.0',
+      misAJour: { command: 'update', outcome: 'error', message: 'Plugin "myconfig" is not installed' },
+    })
+    const ui = await $.ui.mount({ plugin: 'myconfig', surface: 'terminal', ...panneau })
+    await ui.press({ key: 'mettre-a-jour' })
+    await horloge.advance(10)
+    expect(m.toasts).toEqual([echecMarketplace(COPIE, 'Plugin "myconfig" is not installed')])
+    expect(m.recharges).toEqual([])
     await ui.unmount()
   })
 })

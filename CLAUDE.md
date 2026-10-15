@@ -40,7 +40,8 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   marketplace `myconfig`, une entrée de source `./` (`/plugin install myconfig --marketplace
   mdany75/myconfig`, ou `claude plugin install` avec la même option). Le marketplace local
   `plugins-dany` continue de désigner ce dossier par `./myconfig`. Une copie installée ainsi n'est
-  pas un clone git : la rangée « Version » de l'onglet Général ne sert qu'à la copie de Dany.
+  pas un clone git (`<plugins>/cache/<marketplace>/<plugin>/<version>`) : la rangée « Version » le
+  reconnaît (Croquis 1, voir « Mise à jour »).
 - Tout ce qui touche au moteur (`$`) reste dans `hooks/register.tsx` : le moteur ne suit pas
   `$` à travers un import (`claude plugin validate` le refuse). Les autres fichiers de
   `hooks/` ne contiennent que des fonctions pures, testées directement.
@@ -66,10 +67,25 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   Général (`rangeesMod`). `verifierGithub` (à l'ouverture de l'onglet, au plus une fois par
   `VERIFICATION_MS`) fait `git fetch`, `rev-list --count HEAD..@{u}` et lit `plugin.json` de `@{u}`
   dans `$.plugin.root` ; le résultat va dans `versionGithub`, l'action en cours dans `miseAJour`.
-  `mettreAJour` refuse si `git status --porcelain` n'est pas vide, fait `git pull --ff-only`, puis
-  appelle toujours `recharger` quand `HEAD` a changé (demande de Dany). `recharger` lance
+  `mettreAJour` (pour un clone, `tirerGithub`) refuse si `git status --porcelain` n'est pas vide,
+  fait `git pull --ff-only`, puis appelle toujours `recharger` quand `HEAD` a changé (demande de
+  Dany). `recharger` lance
   `$.command.run({ command: 'reload-plugins' })` ; s'il est refusé, `/reload-plugins` va dans le
   champ. Les boutons passent par `$.clock.after` : une promesse laissée seule meurt avec le hook.
+  Un dossier n'est un clone que si `git rev-parse --show-prefix` y répond vide (`estClone`) ; sinon
+  « pas un clone git », ni fetch ni pull.
+- Mise à jour d'une copie du marketplace (1.2.0, choix de Dany, Croquis 1 : même bouton, mêmes
+  textes) : `copieDuMod` lit `$.plugin.root` liens résolus (`$.fs.stat`) et `copieMarketplace`
+  reconnaît `<plugins>/cache/<marketplace>/<plugin>/<version>`. `verifierGithub` travaille alors
+  dans le clone du marketplace (`installLocation` de `known_marketplaces.json`,
+  `dossierMarketplace`) : `git fetch`, puis la version de `@{u}` (chemin du mod pris dans
+  `marketplace.json`, `cheminDansMarketplace`) ; `retard` vaut 1 quand elle diffère
+  (`retardMarketplace`). `mettreAJourParMarketplace` lance `claude plugin marketplace update` puis
+  `claude plugin update <plugin>@<marketplace>`, avec `--json` (`lireResultat` ; `updateOutcome`
+  vaut `updated`, `up_to_date` ou `skipped`), par `CLAUDE_CODE_EXECPATH` (`claude` du PATH à
+  défaut), sans `-y` ; `miseAJour` passe par `marketplace` puis `mise-a-jour`. Un échec donne
+  `echecMarketplace` (les deux commandes à la main). La copie de Dany (clone, marketplace local
+  `plugins-dany`) garde `git pull --ff-only` (`tirerGithub`).
 - Croquis (0.9.0) : `croquis` est un réglage, pas un module (pas d'onglet à lui). À On, le hook
   `prompt.compose` (partagé avec la Confirmation : un seul hook sans matcher par événement) ajoute
   la section `myconfig:croquis` (`hooks/croquis.ts`). Dans la bande, l'œil `croquis` (Œil 2) est

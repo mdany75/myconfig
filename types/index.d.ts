@@ -157,7 +157,10 @@ export type EtatGithub = {
   locale: string | null
   /** La version sur GitHub (la branche suivie), si elle se lit. */
   distante: string | null
-  /** Les changements de GitHub pas encore ici (`git rev-list --count HEAD..@{u}`). */
+  /**
+   * Les changements de GitHub pas encore ici (`git rev-list --count HEAD..@{u}`) ; pour une copie
+   * du marketplace, 1 quand GitHub porte une autre version (`retardMarketplace`).
+   */
   retard: number
   /** Quand la vérification a eu lieu (millisecondes). */
   verifie: number
@@ -166,7 +169,7 @@ export type EtatGithub = {
 }
 
 /** Ce que les boutons de l'onglet Général font en ce moment, ou rien. */
-export type MiseAJour = 'verification' | 'mise-a-jour' | 'rechargement' | null
+export type MiseAJour = 'verification' | 'marketplace' | 'mise-a-jour' | 'rechargement' | null
 
 /** Ce que la Correction fait en ce moment : améliorer le prompt, corriger le texte, ou rien. */
 export type TravailCorrection = 'ameliorer' | 'corriger' | null

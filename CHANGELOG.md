@@ -1,5 +1,21 @@
 # Changements
 
+## 1.2.0 — 2026-10-15
+
+### Ajouté
+- Onglet Général, rangée « Version » (Croquis 1) : une copie installée depuis GitHub (le marketplace
+  `myconfig`) n'est pas un clone git ; la rangée ne dit plus « GitHub injoignable ». Elle lit la
+  version de GitHub dans le clone du marketplace, et « ⬇ Mettre à jour et recharger » lance
+  `claude plugin marketplace update myconfig` puis `claude plugin update myconfig@myconfig`
+  (« marketplace… », « mise à jour… »), puis recharge les mods si le mod a changé. Un échec donne
+  les deux commandes à taper dans un terminal.
+
+### Modifié
+- Un dossier pris dans un dépôt git plus grand n'est plus traité comme un clone du mod : la rangée
+  dit « pas un clone git », et ni `git fetch` ni `git pull` n'y sont lancés.
+- README : la section « Installer » dit que la rangée « Version » met aussi à jour une copie
+  installée depuis GitHub.
+
 ## 1.1.1 — 2026-10-15
 
 ### Corrigé

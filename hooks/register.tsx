@@ -16,7 +16,21 @@ import {
   SECTION,
 } from './confirmation'
 import { CONSIGNE as CONSIGNE_CROQUIS, SECTION as SECTION_CROQUIS } from './croquis'
-import { lireVersion, messageMiseAJour, premiereLigne, statutVersion, VERIFICATION_MS } from './mise-a-jour'
+import {
+  cheminDansMarketplace,
+  commandesMarketplace,
+  copieMarketplace,
+  dossierMarketplace,
+  echecMarketplace,
+  lireResultat,
+  lireVersion,
+  messageMiseAJour,
+  premiereLigne,
+  retardMarketplace,
+  statutVersion,
+  VERIFICATION_MS,
+} from './mise-a-jour'
+import type { CopieMarketplace } from './mise-a-jour'
 import {
   CONSIGNE as CONSIGNE_CORRECTION,
   CONSIGNE_ORTHOGRAPHE,
@@ -227,10 +241,36 @@ async function ouvrirPanneau($: EngineInterface) {
 }
 
 // ── Mise à jour (onglet Général, Croquis 4) ─────────────────────────────────
-// Le mod est un clone de github.com/mdany75/myconfig : git travaille dans son dossier.
+// Un clone de github.com/mdany75/myconfig (la copie de Dany) : git travaille dans son dossier.
+// Une copie installée depuis le marketplace GitHub (Croquis 1) : git lit GitHub dans le clone du
+// marketplace, et `claude plugin` fait la mise à jour.
+
+const gitDans = ($: EngineInterface, dossier: string, args: readonly string[], timeoutMs = 15_000) =>
+  $.process.run(['git', ...args], { cwd: dossier, timeoutMs })
 
 const git = ($: EngineInterface, args: readonly string[], timeoutMs = 15_000) =>
-  $.process.run(['git', ...args], { cwd: $.plugin.root, timeoutMs })
+  gitDans($, $.plugin.root, args, timeoutMs)
+
+// Vrai quand le dossier est la racine d'un clone, pas un dossier pris dans un dépôt plus grand.
+async function estClone($: EngineInterface, dossier: string) {
+  const r = await gitDans($, dossier, ['rev-parse', '--show-prefix'])
+  return r.exitCode === 0 && r.stdout.trim() === ''
+}
+
+// La copie du marketplace qu'est ce mod, ou rien (un clone, ou un autre dossier). La racine est
+// lue liens résolus.
+async function copieDuMod($: EngineInterface) {
+  const reelle = await $.fs.stat($.plugin.root, { resolve: true }).then(
+    s => s.realPath ?? $.plugin.root,
+    () => $.plugin.root,
+  )
+  return copieMarketplace(reelle)
+}
+
+async function dossierDuMarketplace($: EngineInterface, c: CopieMarketplace) {
+  const connus = await $.fs.read(`${c.plugins}/known_marketplaces.json`).then(String, () => null)
+  return dossierMarketplace(connus, c)
+}
 
 async function versionLocale($: EngineInterface) {
   try {
@@ -256,6 +296,29 @@ async function verifierGithub($: EngineInterface) {
   const etat = (erreur: string | null, retard = 0, distante: string | null = null) =>
     $.state.set(versionGithub, { locale, distante, retard, verifie: instant, erreur })
   try {
+    const copie = await copieDuMod($)
+    if (copie !== null) {
+      // Le clone du marketplace suit GitHub : sa branche suivie porte la version à venir.
+      const dossier = await dossierDuMarketplace($, copie)
+      if (!(await estClone($, dossier))) {
+        await etat('marketplace sans git')
+        return
+      }
+      if ((await gitDans($, dossier, ['fetch', '--quiet', 'origin'])).exitCode !== 0) {
+        await etat('GitHub injoignable')
+        return
+      }
+      const catalogue = await gitDans($, dossier, ['show', '@{u}:.claude-plugin/marketplace.json'])
+      const chemin = catalogue.exitCode === 0 ? cheminDansMarketplace(catalogue.stdout, copie.plugin) : null
+      const manifeste = chemin === null ? null : await gitDans($, dossier, ['show', `@{u}:${chemin}.claude-plugin/plugin.json`])
+      const distante = manifeste?.exitCode === 0 ? lireVersion(manifeste.stdout) : null
+      await etat(distante === null ? 'version GitHub illisible' : null, retardMarketplace(locale, distante), distante)
+      return
+    }
+    if (!(await estClone($, $.plugin.root))) {
+      await etat('pas un clone git')
+      return
+    }
     const recuperer = await git($, ['fetch', '--quiet', 'origin'])
     if (recuperer.exitCode !== 0) {
       await etat('GitHub injoignable')
@@ -293,43 +356,74 @@ async function recharger($: EngineInterface) {
   }
 }
 
-// ⬇ : `git pull --ff-only` dans le dossier du mod, puis, dès que quelque chose a changé, le
-// rechargement des mods, toujours. Des modifications locales arrêtent tout : rien n'est écrasé.
+// ⬇ : la mise à jour, puis, dès que quelque chose a changé, le rechargement des mods, toujours.
 async function mettreAJour($: EngineInterface) {
   if (((await $.state.get(miseAJour)).value ?? null) !== null) {
     return
   }
-  await $.state.set(miseAJour, 'mise-a-jour')
+  const copie = await copieDuMod($)
+  await $.state.set(miseAJour, copie === null ? 'mise-a-jour' : 'marketplace')
   let change = false
   try {
-    const avant = await versionLocale($)
-    const local = await git($, ['status', '--porcelain'])
-    if (local.exitCode !== 0) {
-      $.ui.toast('MyConfig : le dossier du mod n’est pas un dépôt git ; mise à jour impossible.')
-      return
-    }
-    if (local.stdout.trim() !== '') {
-      $.ui.toast('MyConfig : mise à jour annulée, des modifications locales ne sont pas sur GitHub.')
-      return
-    }
-    const tete = (await git($, ['rev-parse', 'HEAD'])).stdout.trim()
-    const tirer = await git($, ['pull', '--ff-only', '--quiet'], 60_000)
-    if (tirer.exitCode !== 0) {
-      $.ui.toast(`MyConfig : la mise à jour a échoué (${premiereLigne(tirer.stderr) || `code ${tirer.exitCode}`}).`)
-      return
-    }
-    change = (await git($, ['rev-parse', 'HEAD'])).stdout.trim() !== tete
-    const apres = await versionLocale($)
-    $.ui.toast(messageMiseAJour(avant, apres, change))
-    await $.state.set(versionGithub, { locale: apres, distante: apres, retard: 0, verifie: await $.clock.now(), erreur: null })
+    change = copie === null ? await tirerGithub($) : await mettreAJourParMarketplace($, copie)
   } catch (erreur) {
-    $.ui.toast(`MyConfig : la mise à jour a échoué (${erreur instanceof Error ? erreur.message : String(erreur)}).`)
+    const raison = erreur instanceof Error ? erreur.message : String(erreur)
+    $.ui.toast(copie === null ? `MyConfig : la mise à jour a échoué (${raison}).` : echecMarketplace(copie, raison))
   } finally {
     await $.state.set(miseAJour, null)
   }
   if (change) {
     await recharger($)
   }
+}
+
+// Un clone : `git pull --ff-only` dans le dossier du mod. Des modifications locales arrêtent tout :
+// rien n'est écrasé. Vrai quand `HEAD` a changé.
+async function tirerGithub($: EngineInterface) {
+  const avant = await versionLocale($)
+  const local = await git($, ['status', '--porcelain'])
+  if (local.exitCode !== 0 || !(await estClone($, $.plugin.root))) {
+    $.ui.toast('MyConfig : le dossier du mod n’est pas un dépôt git ; mise à jour impossible.')
+    return false
+  }
+  if (local.stdout.trim() !== '') {
+    $.ui.toast('MyConfig : mise à jour annulée, des modifications locales ne sont pas sur GitHub.')
+    return false
+  }
+  const tete = (await git($, ['rev-parse', 'HEAD'])).stdout.trim()
+  const tirer = await git($, ['pull', '--ff-only', '--quiet'], 60_000)
+  if (tirer.exitCode !== 0) {
+    $.ui.toast(`MyConfig : la mise à jour a échoué (${premiereLigne(tirer.stderr) || `code ${tirer.exitCode}`}).`)
+    return false
+  }
+  const change = (await git($, ['rev-parse', 'HEAD'])).stdout.trim() !== tete
+  const apres = await versionLocale($)
+  $.ui.toast(messageMiseAJour(avant, apres, change))
+  await $.state.set(versionGithub, { locale: apres, distante: apres, retard: 0, verifie: await $.clock.now(), erreur: null })
+  return change
+}
+
+// Une copie du marketplace : `claude plugin marketplace update`, puis `claude plugin update`, par
+// l'exécutable de cette session (`claude` du PATH à défaut). Vrai quand le mod a changé.
+async function mettreAJourParMarketplace($: EngineInterface, copie: CopieMarketplace) {
+  const claude = (await $.env.get('CLAUDE_CODE_EXECPATH').catch(() => undefined)) || 'claude'
+  const [relire, remplacer] = commandesMarketplace(copie)
+  const catalogue = lireResultat(await $.process.run([claude, ...relire], { timeoutMs: 180_000 }))
+  if (!catalogue.ok) {
+    $.ui.toast(echecMarketplace(copie, catalogue.message))
+    return false
+  }
+  await $.state.set(miseAJour, 'mise-a-jour')
+  const mod = lireResultat(await $.process.run([claude, ...remplacer], { timeoutMs: 180_000 }))
+  if (!mod.ok) {
+    $.ui.toast(echecMarketplace(copie, mod.message))
+    return false
+  }
+  const avant = mod.avant ?? (await versionLocale($))
+  const apres = mod.apres ?? avant
+  $.ui.toast(messageMiseAJour(avant, apres, mod.change))
+  await $.state.set(versionGithub, { locale: apres, distante: apres, retard: 0, verifie: await $.clock.now(), erreur: null })
+  return mod.change
 }
 
 // Le bouton ⏸ / ▶ de la bande : met la Confirmation à On ou à Off. Remise à On, elle attend un

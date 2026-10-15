@@ -54,9 +54,14 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
   - **Version** : le numéro du mod sur ce Mac et ce que GitHub en dit (« à jour », « → 0.9.1
     disponible »), vérifié à l'ouverture de l'onglet, au plus une fois par 5 minutes. « ⬇ Mettre à
     jour et recharger », foncé quand une version attend, récupère la dernière version de
-    [mdany75/myconfig](https://github.com/mdany75/myconfig) (`git pull --ff-only` dans le dossier du
-    mod), puis recharge toujours les mods. Des modifications locales pas encore sur GitHub
-    l'arrêtent : rien n'est écrasé.
+    [mdany75/myconfig](https://github.com/mdany75/myconfig), puis recharge les mods dès que quelque
+    chose a changé. Le chemin dépend de la copie (voir « Installer ») :
+    - installée depuis GitHub (le marketplace `myconfig`) : la version de GitHub se lit dans le
+      clone du marketplace, puis le bouton lance `claude plugin marketplace update myconfig` et
+      `claude plugin update myconfig@myconfig` (« marketplace… », « mise à jour… »,
+      « rechargement… ») ;
+    - clone du dépôt (la copie de développement) : `git pull --ff-only` dans le dossier du mod. Des
+      modifications locales pas encore sur GitHub l'arrêtent : rien n'est écrasé.
   - **Mods** : « ↻ Recharger », comme `/reload-plugins` (si le moteur refuse de la lancer, la
     commande attend dans le champ de saisie).
 - **Correction** : pas d'On / Off, mais « Afficher » : « ✎ Améliorer » et « ✓ Correction », chacun affiché
@@ -228,8 +233,9 @@ claude plugin marketplace update myconfig
 claude plugin update myconfig@myconfig
 ```
 
-La rangée « Version » de l'onglet Général et son bouton « ⬇ Mettre à jour » travaillent avec git :
-ils ne servent qu'à une copie clonée du dépôt, comme celle de développement ci-dessous.
+Ou, plus simplement, depuis le panneau : la rangée « Version » de l'onglet Général dit quand une
+version attend, et « ⬇ Mettre à jour et recharger » lance ces deux commandes, puis recharge les mods.
+Si elles échouent, le message rappelle de les taper dans un terminal.
 
 ### Copie de développement (Dany)
 
