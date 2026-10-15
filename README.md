@@ -1,9 +1,9 @@
 # MyConfig
 
-Mod Claude Code qui réunit en un seul mod, réglables d'un même panneau, les mods
-[jauge](../jauge), [fil-son](../fil-son), [relais](../relais), [plume](../plume) et
-[cap](../cap), plus trois fonctions nouvelles, la Confirmation, la Progression et les Croquis. Une carte au-dessus du champ de saisie
-réunit les boutons et les chiffres ; un panneau à onglets règle chaque module.
+Mod Claude Code qui réunit en un seul mod, réglables d'un même panneau, mes anciens mods
+jauge, fil-son, relais, plume et cap, plus trois fonctions nouvelles, la Confirmation, la
+Progression et les Croquis. Une carte au-dessus du champ de saisie réunit les boutons et les
+chiffres ; un panneau à onglets règle chaque module.
 
 ![La bande MyConfig au-dessus du champ de saisie, dans l'app de bureau de Claude](docs/capture.png)
 
@@ -46,7 +46,7 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 ⚙ ou `/myconfig` ouvre le panneau MyConfig (croquis 5, « Onglets ») : un onglet par module
 (● On, ○ Off), son état On / Off et ses réglages propres.
 
-![Le panneau MyConfig, onglet Proposition](docs/panneau.png)
+![Le panneau MyConfig, onglet Général](docs/panneau.png)
 
 - **Général** (Général A, l'ancien onglet Son) : une rangée par fonction. « Son » (On / Off et
   « ▶ Tester le son ») et « Croquis 👁 » (On / Off). L'onglet est allumé (●) dès que l'un des deux
@@ -233,8 +233,9 @@ terminal et dans l'app de bureau ; ils ne jouent aucun son et n'écrivent aucun 
 - `hooks/register.tsx` : tous les hooks, la bande et le panneau (tout ce qui touche au moteur)
 - `hooks/reglages.ts` : réglages par défaut, commande `/myconfig` (pur)
 - `hooks/stats.ts`, `hooks/progression.ts`, `hooks/proposition.ts`, `hooks/correction.ts`, `hooks/confirmation.ts`,
-  `hooks/son.ts`, `hooks/relais-consigne.ts`, `hooks/relais-outils.ts` : fonctions pures des modules
+  `hooks/croquis.ts`, `hooks/mise-a-jour.ts`, `hooks/son.ts`, `hooks/relais-consigne.ts`,
+  `hooks/relais-outils.ts` : fonctions pures des modules
 - `types/index.d.ts` : contrat des valeurs de `$.state`
-- `sons/fin.aiff` : signal de fin
+- `sons/fin.aiff` : signal de fin, un carillon de synthèse original
 - `tests/` : tests du mod
 - `docs/` : captures d'écran (`capture.png` la bande, `panneau.png` le panneau, `journal.png` le journal déplié)

@@ -1,5 +1,13 @@
 # Changements
 
+## 1.0.2 — 2026-10-15
+
+### Modifié
+- Le son de fin est un carillon de synthèse original (deux notes de verre, 1,6 seconde) ; il
+  remplace une copie du son Glass d'Apple, qui ne pouvait pas être redistribuée.
+- README : captures refaites (la bande, le panneau sur l'onglet Général, le journal déplié),
+  liste des fichiers complétée (`croquis.ts`, `mise-a-jour.ts`), liens vers les anciens mods retirés.
+
 ## 1.0.1 — 2026-10-14
 
 ### Modifié
