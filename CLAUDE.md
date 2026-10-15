@@ -33,8 +33,14 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
 - Répondre et écrire (commits, README, textes de l'interface) en français.
 - Ne jamais déplacer ni renommer ce dossier : le marketplace local `plugins-dany` le désigne
   par `./myconfig`.
-- La description du mod est écrite dans `.claude-plugin/plugin.json` et dans l'entrée
-  `myconfig` du `marketplace.json` parent : les garder identiques.
+- La description du mod est écrite à trois endroits : `.claude-plugin/plugin.json`, l'entrée
+  `myconfig` du `marketplace.json` parent et celle de `.claude-plugin/marketplace.json` : les
+  garder identiques.
+- Installation depuis GitHub (1.1.0) : `.claude-plugin/marketplace.json` fait du dépôt le
+  marketplace `myconfig`, une entrée de source `./` (`/plugin install myconfig --marketplace
+  mdany75/myconfig`, ou `claude plugin install` avec la même option). Le marketplace local
+  `plugins-dany` continue de désigner ce dossier par `./myconfig`. Une copie installée ainsi n'est
+  pas un clone git : la rangée « Version » de l'onglet Général ne sert qu'à la copie de Dany.
 - Tout ce qui touche au moteur (`$`) reste dans `hooks/register.tsx` : le moteur ne suit pas
   `$` à travers un import (`claude plugin validate` le refuse). Les autres fichiers de
   `hooks/` ne contiennent que des fonctions pures, testées directement.
@@ -121,6 +127,7 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
 ## Organisation
 
 - `.claude-plugin/plugin.json` : manifeste du mod (version, option `modele` de la Correction)
+- `.claude-plugin/marketplace.json` : le dépôt comme marketplace `myconfig` (installation depuis GitHub)
 - `hooks/register.tsx` : tous les hooks, la bande, le panneau
 - `hooks/*.ts` : fonctions pures des modules (réglages, stats, proposition, correction,
   confirmation, croquis, mise-a-jour, progression, son, relais)

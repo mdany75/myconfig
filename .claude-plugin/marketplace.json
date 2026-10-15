@@ -1,0 +1,14 @@
+{
+  "name": "myconfig",
+  "owner": {
+    "name": "Dany Ménard"
+  },
+  "description": "MyConfig, le mod Claude Code de Dany, installable depuis GitHub.",
+  "plugins": [
+    {
+      "name": "myconfig",
+      "source": "./",
+      "description": "MyConfig : Son, Croquis, Relais, Correction, Stats, Proposition, Confirmation et Progression réunis dans un seul mod, réglables d'un panneau à onglets."
+    }
+  ]
+}

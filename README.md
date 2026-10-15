@@ -193,8 +193,46 @@ Le modèle de la Correction (sonnet, haiku ou opus) se règle dans les options d
 
 ## Installer
 
-MyConfig s'installe depuis le marketplace local « plugins-dany » : le dossier
-`~/Developer/Plugins`, qui regroupe tous les mods de Dany.
+### Depuis GitHub
+
+Le dépôt est aussi un marketplace (nommé `myconfig`). Dans une session Claude Code ouverte dans un
+terminal, taper :
+
+```
+/plugin install myconfig --marketplace mdany75/myconfig
+```
+
+Répondre `y` pour ajouter le marketplace (`github:mdany75/myconfig`), puis Entrée pour la portée
+« user » ; un écran règle ensuite le modèle de la Correction (sonnet par défaut). Le mod est actif
+tout de suite dans cette session, puis dans chaque nouvelle session.
+
+La même installation, sans ouvrir de session :
+
+```bash
+claude plugin install myconfig --marketplace mdany75/myconfig
+```
+
+La commande `/plugin` n'existe pas dans l'onglet Code de l'app de bureau : installer depuis un
+terminal. Installé à la portée « user », le mod se charge aussi dans l'app de bureau.
+
+Pour passer à une nouvelle version, relire le marketplace puis mettre le mod à jour, et taper
+`/reload-plugins` dans les sessions ouvertes :
+
+```bash
+claude plugin marketplace update myconfig
+```
+
+```bash
+claude plugin update myconfig@myconfig
+```
+
+La rangée « Version » de l'onglet Général et son bouton « ⬇ Mettre à jour » travaillent avec git :
+ils ne servent qu'à une copie clonée du dépôt, comme celle de développement ci-dessous.
+
+### Copie de développement (Dany)
+
+Sur le Mac de Dany, MyConfig s'installe depuis le marketplace local « plugins-dany » : le dossier
+`~/Developer/Plugins`, qui regroupe tous ses mods.
 
 ```bash
 claude plugin marketplace add ~/Developer/Plugins
@@ -207,8 +245,11 @@ claude plugin install myconfig@plugins-dany
 Le plugin est lu directement dans `~/Developer/Plugins/myconfig` : après une modification,
 `/reload-plugins` dans une session suffit, sans réinstaller.
 
+### À éviter
+
 Ne pas activer MyConfig en même temps que jauge, fil, fil-son, relais, plume ou cap : boutons et son
-seraient en double (`claude plugin disable <mod>@plugins-dany` les désactive).
+seraient en double (`claude plugin disable <mod>@plugins-dany` les désactive). Ne pas installer non
+plus `myconfig@myconfig` et `myconfig@plugins-dany` ensemble.
 
 Testé avec Claude Code 2.1.295.
 
@@ -229,6 +270,7 @@ terminal et dans l'app de bureau ; ils ne jouent aucun son et n'écrivent aucun 
 ## Organisation
 
 - `.claude-plugin/plugin.json` : manifeste du mod
+- `.claude-plugin/marketplace.json` : fait du dépôt un marketplace, pour l'installer depuis GitHub
 - `hooks/hooks.json` : nomme le module de hooks
 - `hooks/register.tsx` : tous les hooks, la bande et le panneau (tout ce qui touche au moteur)
 - `hooks/reglages.ts` : réglages par défaut, commande `/myconfig` (pur)

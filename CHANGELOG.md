@@ -1,5 +1,16 @@
 # Changements
 
+## 1.1.0 — 2026-10-15
+
+### Ajouté
+- Installation depuis GitHub : le dépôt est aussi un marketplace (`.claude-plugin/marketplace.json`,
+  nommé `myconfig`). `/plugin install myconfig --marketplace mdany75/myconfig` installe le mod sur
+  n'importe quel poste, sans le dossier `~/Developer/Plugins`.
+
+### Modifié
+- README : la section « Installer » donne l'installation depuis GitHub, la mise à jour par
+  `claude plugin update`, puis la copie de développement (marketplace local « plugins-dany »).
+
 ## 1.0.2 — 2026-10-15
 
 ### Modifié
