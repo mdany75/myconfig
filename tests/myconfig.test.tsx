@@ -807,18 +807,30 @@ describe('la Progression sans liste dans la bande', () => {
 
 describe('la bande', () => {
   for (const surface of SURFACES) {
-    test(`montre Correction, Stats, Confirmation et ⚙, sans Relais ni quotas (${surface})`, async ($, on) => {
-      simuler(on)
+    test(`montre Correction, Stats, Confirmation, Relais ♻ et ⚙, sans quotas (${surface})`, async ($, on) => {
+      const horloge = simuler(on)
+      on('turn.start', (_$, e) => ({ turnId: e.turnId }))
       await etat($)
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
-      for (const key of ['myconfig', 'ameliorer', 'revenir', 'stats', 'croquis', 'confirmation', 'reglages']) {
+      for (const key of ['myconfig', 'ameliorer', 'revenir', 'stats', 'croquis', 'confirmation', 'relais', 'reglages']) {
         expect(await ui.find({ key })).toBeDefined()
       }
-      expect(await ui.find({ key: 'relais' })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: /34 %/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /68k\/200k · 12 min/ })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /5h|7j/ })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: /Confirmation|Feu vert/ })).toBeUndefined()
+      // Le Relais : un premier clic demande confirmation, qui s'éteint après 6 secondes.
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('♻')
+      await ui.press({ key: 'relais' })
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('♻ ?')
+      await horloge.advance(6_500)
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('♻')
+
+      // Pendant que Claude travaille, le bouton attend.
+      await $.turn.start({ text: 'Travaille', turnId: 't1' })
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.dimColor).toBe(true)
+      await ui.press({ key: 'relais' })
+      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('♻')
       await ui.unmount()
     })
 
@@ -1065,12 +1077,12 @@ describe('le panneau', () => {
   }
 
   for (const surface of SURFACES) {
-    test(`l’onglet Stats : la session, le forfait et le Relais (${surface})`, async ($, on) => {
+    test(`l’onglet Stats : la session et le forfait (${surface})`, async ($, on) => {
       const horloge = simuler(on)
       on('turn.start', (_$, e) => ({ turnId: e.turnId }))
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...panneau })
       await ui.press({ key: 'onglet-stats' })
-      for (const texte of ['Cette session', 'Forfait', 'Relais', 'Limite 5 h', 'Semaine', '12 min', '34 %']) {
+      for (const texte of ['Cette session', 'Forfait', 'Limite 5 h', 'Semaine', '12 min', '34 %']) {
         expect(await ui.find({ type: 'Text', text: texte })).toBeDefined()
       }
       expect(await ui.find({ type: 'Text', text: '68k / 200k jetons' })).toBeDefined()
@@ -1079,18 +1091,6 @@ describe('le panneau', () => {
       expect(await ui.find({ type: 'Text', text: / MCP / })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: /deux clics/ })).toBeUndefined()
 
-      // Le Relais : un premier clic demande confirmation, qui s'éteint après 6 secondes.
-      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('⇄ Relais')
-      await ui.press({ key: 'relais' })
-      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('Confirmer ?')
-      await horloge.advance(6_500)
-      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('⇄ Relais')
-
-      // Pendant que Claude travaille, le bouton attend.
-      await $.turn.start({ text: 'Travaille', turnId: 't1' })
-      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.dimColor).toBe(true)
-      await ui.press({ key: 'relais' })
-      expect((await ui.find({ type: 'Button', key: 'relais' }))?.props.label).toBe('⇄ Relais')
       await ui.unmount()
     })
   }

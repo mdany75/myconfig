@@ -91,7 +91,6 @@ import {
   citer,
   compterMots,
   extraireSection,
-  libelle,
   nettoyer as nettoyerRecap,
   nomDeFichier,
   problemeRecap,
@@ -852,8 +851,7 @@ async function commandeRelais($: EngineInterface, args: string): Promise<string>
 
 // ── La bande (croquis 1, « Tableau de bord ») ────────────────────────────────
 // Une carte arrondie : les propositions en haut, la Correction à gauche,
-// les Stats, l'œil des Croquis, le bouton Confirmation (⏸ / ▶) et ⚙ à droite. Le Relais est dans
-// l'onglet Stats.
+// les Stats, l'œil des Croquis, le bouton Confirmation (⏸ / ▶), le Relais (♻) et ⚙ à droite.
 
 // L'anneau de contexte : un dessin SVG là où la surface en a, un quart de disque au terminal.
 function anneauDe($: EngineInterface, e: Bande, p: number | null): RenderElement {
@@ -995,7 +993,7 @@ async function bandeLimites($: EngineInterface, e: Bande): Promise<{ bloc: Rende
   const { value: m = null } = await $.state.get(mesure)
   const { value: instant = null } = await $.state.get(maintenant)
   const liste = trierLimites(m?.limites ?? [])
-  const largeur = Math.max(20, Math.min(46, e.props.bodyColumns - 6))
+  const largeur = Math.max(20, e.props.bodyColumns - 6)
 
   const barreDe = (l: { kind: string; pourcent: number }): RenderElement => {
     if (e.surface === 'terminal') {
@@ -1035,8 +1033,7 @@ async function bandeLimites($: EngineInterface, e: Bande): Promise<{ bloc: Rende
 
   const bloc = (
     <Box key="limites" flexDirection="row" width="100%">
-      <Box key="limites-espace" flexGrow={1} />
-      <Box key="limites-bloc" flexDirection="column" width={largeur}>
+      <Box key="limites-bloc" flexDirection="column" flexGrow={1}>
         <Box key="limites-titre" flexDirection="row">
           <Text dimColor bold>
             LIMITES D’UTILISATION DU FORFAIT
@@ -1055,7 +1052,8 @@ async function bandeLimites($: EngineInterface, e: Bande): Promise<{ bloc: Rende
   return { bloc, rangs: 1 + Math.max(1, liste.length * 2) }
 }
 
-// L'œil de la bande (Œil 2, à gauche du ⏸ / ▶) : la fonction Croquis, foncé à On, normal à Off.
+// L'œil de la bande (Œil 2, à gauche du ⏸ / ▶) : la fonction Croquis, 👁 foncé à On, 👁 normal à Off.
+// (Un œil barré, 👁 + U+20E0, s'affichait en deux cases vides dans l'app de bureau.)
 function boutonCroquis($: EngineInterface, e: Bande, r: Reglages): RenderElement {
   const { Button } = $.ui.resolve(e)
   return (
@@ -1428,6 +1426,7 @@ async function bande($: EngineInterface, e: Bande, dessous: RenderElement, model
       {r.stats ? await bandeStats($, e) : null}
       {boutonCroquis($, e, r)}
       {boutonConfirmation($, e, r)}
+      {await boutonRelais($, e)}
       <Button key="reglages" label="⚙" dimColor onPress={() => void ouvrirPanneau($)} />
     </Box>
   )
@@ -1485,19 +1484,17 @@ async function choisirOnglet($: EngineInterface, m: Module) {
   }
 }
 
-// Le bouton Relais de l'onglet Stats : deux clics (« Confirmer ? » pendant 6 secondes), et rien
-// pendant que Claude travaille, comme l'ancien bouton de la bande.
-async function boutonRelais($: EngineInterface, e: Panneau): Promise<RenderElement> {
+// Le bouton Relais de la bande (♻, entre ▶ et ⚙) : deux clics (« ♻ ? » pendant 6 secondes), et rien
+// pendant que Claude travaille.
+async function boutonRelais($: EngineInterface, e: Bande): Promise<RenderElement> {
   const { Button } = $.ui.resolve(e)
   const { value: en = null } = await $.state.get(etapeRelais)
-  const { value: m = null } = await $.state.get(mesure)
   const { value: travail = false } = await $.state.get(auTravail)
   const occupe = en === 'redaction' || en === 'effacement'
-  const conseille = typeof m?.contexte === 'number' && m.contexte >= SEUIL_CONSEIL
   return (
     <Button
       key="relais"
-      label={libelle(en, conseille)}
+      label={en === 'a-confirmer' ? '♻ ?' : '♻'}
       variant={en === 'a-confirmer' ? 'primary' : 'secondary'}
       dimColor={occupe || travail}
       onPress={() => {
@@ -1558,8 +1555,8 @@ async function rangeesMod($: EngineInterface, e: Panneau, rangee: Rangee): Promi
   )
 }
 
-// L'onglet Stats (croquis C) : cette session (contexte et son contenu, durée et coût), le forfait
-// (les limites de « /usage »), puis le Relais.
+// L'onglet Stats (croquis C) : cette session (contexte et son contenu, durée et coût), puis le
+// forfait (les limites de « /usage »).
 async function ongletStats($: EngineInterface, e: Panneau, rangee: Rangee): Promise<RenderElement> {
   const { Box, Text } = $.ui.resolve(e)
   const { value: me = null } = await $.state.get(mesure)
@@ -1677,13 +1674,6 @@ async function ongletStats($: EngineInterface, e: Panneau, rangee: Rangee): Prom
         {titre('titre-forfait', 'Forfait')}
         {forfait}
       </Box>
-      <Box key="relais-bloc" flexDirection="column">
-        {titre('titre-relais', 'Relais')}
-        <Box key="relais-ligne" flexDirection="row" gap={1} alignItems="center">
-          {await boutonRelais($, e)}
-          <Text dimColor>récapitule, efface, prépare la reprise</Text>
-        </Box>
-      </Box>
     </Box>
   )
 }
@@ -1691,7 +1681,7 @@ async function ongletStats($: EngineInterface, e: Panneau, rangee: Rangee): Prom
 async function panneau($: EngineInterface, e: Panneau, modele: string): Promise<RenderElement> {
   const { Box, Button, Text } = $.ui.resolve(e)
   const r = await lireReglages($)
-  // Un onglet gardé d'une version plus ancienne (« relais ») revient aux Stats, où vit le Relais.
+  // Un onglet gardé d'une version plus ancienne (« relais ») revient aux Stats.
   const { value: garde = 'son' } = await $.state.get(onglet)
   const choisi: Module = MODULES.includes(garde) ? garde : 'stats'
   const actif = r[choisi]

@@ -13,9 +13,9 @@ réunit les boutons et les chiffres ; un panneau à onglets règle chaque module
 | --- | --- | --- | --- |
 | **Son** | fil-son | Joue un son à la fin d'une tâche d'au moins 10 secondes. | On / Off, dans l'onglet Général |
 | **Croquis** | — | Avant de construire ou de changer une interface, Claude montre 5 croquis et attend ton choix, sans que tu le demandes. | On / Off, dans l'onglet Général ou d'un clic sur 👁 dans la bande |
-| **Relais** | relais | Récapitule la conversation dans `.relais/`, l'efface et prépare le message de reprise. | Toujours là : bouton dans l'onglet Stats du panneau, ou `/relais` |
+| **Relais** | relais | Récapitule la conversation dans `.relais/`, l'efface et prépare le message de reprise. | Toujours là : bouton ♻ dans la bande, ou `/relais` |
 | **Correction** | plume | « ✎ Améliorer » reformule ta consigne en prompt structuré ; « ✓ Correction » corrige seulement le texte ; « Revenir » remet ton texte. | Afficher : Améliorer, Correction (aucun = Off) |
-| **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. Dans le panneau : le contenu du contexte, le coût, les limites et le Relais. | On / Off |
+| **Stats** | jauge | Contexte utilisé (%, jetons) et durée de la session ; un clic ouvre les limites d'utilisation du forfait. Dans le panneau : le contenu du contexte, le coût et les limites. | On / Off |
 | **Proposition** | cap | Des suites logiques après chaque réponse ; un clic en lance une. | On / Off, 1 à 5, sur une ligne ou une par ligne ; modèle de la session |
 | **Confirmation** | — | Claude résume ce qu'il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit. | On / Off, aussi d'un clic sur ⏸ / ▶ dans la bande |
 | **Progression** | fil | L'avancement du travail : une barre fine et un point par étape de la liste de tâches de Claude ; sans liste, une piste de temps des actions. | Afficher : Avec liste, Sans liste (aucun = Off) ; disparaît après : instantané, 5 à 15 s, jamais ; détail : 3, 6, 9, 12, illimité |
@@ -26,19 +26,20 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
 
 - Les propositions en haut, côte à côte ou une par ligne, puis une ligne vide avant les boutons.
 - La Correction à gauche, puis à droite les Stats (un anneau de contexte dessiné dans l'app de
-  bureau, un quart de disque au terminal), l'œil des Croquis, le bouton Confirmation et ⚙, qui
-  ouvre le panneau.
+  bureau, un quart de disque au terminal), l'œil des Croquis, le bouton Confirmation, le Relais (♻)
+  et ⚙, qui ouvre le panneau.
 - L'œil (👁) : foncé quand les Croquis sont à On, normal à Off ; un clic bascule.
 - Le bouton Confirmation : « ⏸ » foncé quand la Confirmation est à On (Claude attend ton feu vert),
   « ▶ » normal à Off ; un clic bascule.
 - Couleurs des Stats : vert sous 60 %, jaune de 60 à 79 %, rouge à 80 % et plus.
 - Un clic sur les chiffres des Stats (▾) relit les données et ouvre, à la place des propositions,
-  les **limites d'utilisation du forfait** : limite de 5 heures et limite hebdomadaire, chacune avec
-  son %, le délai avant sa remise à zéro et une barre bleue. « ↻ » les relit ; un autre clic (▴)
-  les ferme. Ce sont les chiffres que la dernière réponse a rapportés.
-- Un module à Off disparaît de la bande ; l'œil, le bouton Confirmation et ⚙ restent toujours.
-- Le Relais n'est plus dans la bande, pour éviter un clic par erreur : son bouton est dans l'onglet
-  Stats du panneau.
+  les **limites d'utilisation du forfait**, sur toute la largeur de la carte : limite de 5 heures et
+  limite hebdomadaire, chacune avec son %, le délai avant sa remise à zéro et une barre bleue. « ↻ »
+  les relit ; un autre clic (▴) les ferme. Ce sont les chiffres que la dernière réponse a rapportés.
+- Le Relais (♻) : deux clics, pour éviter une erreur ; le premier affiche « ♻ ? » foncé pendant
+  6 secondes, le deuxième passe le relais. Le bouton attend la fin du tour quand Claude travaille.
+- Un module à Off disparaît de la bande ; l'œil, le bouton Confirmation, le Relais et ⚙ restent
+  toujours.
 
 ### Le panneau
 
@@ -62,16 +63,13 @@ Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord 
   ou non dans la bande ; aucun des deux, et la Correction est à Off. Le modèle est rappelé dessous.
 - **Proposition** : le modèle (celui de la session : les propositions partent de la conversation en
   cache), nombre (1 à 5), disposition (« Sur une ligne », « Une par ligne »), « ↻ Proposer maintenant ».
-- **Stats** (croquis C), en trois groupes :
+- **Stats** (croquis C), en deux groupes :
   - **Cette session** : le contexte (% et jetons), une barre de son contenu (système, outils, MCP,
     mémoire, messages, libre, réserve du compactage) avec la légende, puis la durée et le coût en
     $ US au prix de l'API. Le contenu est l'estimation locale de `/context` : rien n'est envoyé au
     modèle.
   - **Forfait** : la limite de 5 heures et celle de la semaine, comme `/usage`, chacune avec sa barre
     bleue, son % et sa remise à zéro.
-  - **Relais** : « ⇄ Relais » (« ⇄ Relais ! » à partir de 80 % de contexte). Deux clics : le premier
-    affiche « Confirmer ? » pendant 6 secondes. Le bouton attend la fin du tour quand Claude
-    travaille.
 - **Confirmation** : l'état du dernier message (feu vert donné ou en attente).
 - **Progression** : pas d'On / Off, mais « Afficher » : « ☰ Avec liste » et « ▬ Sans liste », chacun
   affiché ou non dans la bande ; aucun des deux, et la Progression est à Off. « Disparaît après »

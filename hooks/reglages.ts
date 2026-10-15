@@ -32,7 +32,7 @@ export const ICONES: Record<Module, string> = {
 export const DESCRIPTIONS: Record<Module, string> = {
   son: 'Le son de fin de tâche et les croquis avant une nouvelle interface.',
   correction: 'Améliore ta consigne en un prompt structuré, ou corrige seulement le texte, avant l’envoi.',
-  stats: 'Le contexte utilisé à droite de la bande ; ici, son contenu, le forfait et le Relais.',
+  stats: 'Le contexte utilisé à droite de la bande ; ici, son contenu et le forfait.',
   proposition: 'Propose des suites logiques après chaque réponse : un clic en lance une.',
   confirmation: 'Claude résume ce qu’il compte faire et attend ton feu vert avant de créer ou de modifier quoi que ce soit.',
   progression: 'L’avancement du travail : les étapes de la liste de tâches de Claude, ou une piste de temps de ses actions.',
@@ -237,7 +237,7 @@ export const USAGE = [
 ].join('\n')
 
 export const RELAIS_TOUJOURS =
-  'MyConfig : le Relais n’a plus d’On / Off. Son bouton est dans l’onglet Stats du panneau ; « /relais » marche toujours.'
+  'MyConfig : le Relais n’a plus d’On / Off. Son bouton ♻ est toujours dans la bande ; « /relais » marche aussi.'
 
 export type Changement = { reglages: Reglages; message: string } | { erreur: string }
 
@@ -274,7 +274,7 @@ export function appliquer(r: Reglages, args: string): Changement {
     return { reglages: { ...r, croquis: etatCroquis }, message: `MyConfig : Croquis à ${onOff(etatCroquis)}.` }
   }
 
-  // Le Relais n'a plus d'On / Off depuis la 0.8.0 : son bouton est dans l'onglet Stats.
+  // Le Relais n'a plus d'On / Off depuis la 0.8.0 : son bouton ♻ est toujours dans la bande.
   if (sansAccents(premier) === 'relais') {
     return { erreur: RELAIS_TOUJOURS }
   }

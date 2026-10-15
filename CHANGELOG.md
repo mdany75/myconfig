@@ -1,5 +1,17 @@
 # Changements
 
+## 1.0.1 — 2026-10-14
+
+### Modifié
+- Le Relais revient dans la bande, en bouton « ♻ » entre ▶ et ⚙ ; il garde ses deux clics
+  (« ♻ ? » foncé pendant 6 secondes) et attend la fin du tour quand Claude travaille. Il quitte
+  l'onglet Stats, qui garde « Cette session » et « Forfait ».
+- Les limites d'utilisation, ouvertes d'un clic sur les Stats, prennent toute la largeur de la carte.
+
+### Corrigé
+- L'œil des Croquis à Off s'affichait en deux cases vides dans l'app de bureau (un œil barré que la
+  police ne dessine pas) : c'est de nouveau 👁, normal à Off et foncé à On.
+
 ## 1.0.0 — 2026-10-14
 
 Première version stable : la bande (Correction, Stats, l'œil des Croquis, la Confirmation, ⚙) et

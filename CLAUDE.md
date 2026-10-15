@@ -67,17 +67,19 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
 - Croquis (0.9.0) : `croquis` est un réglage, pas un module (pas d'onglet à lui). À On, le hook
   `prompt.compose` (partagé avec la Confirmation : un seul hook sans matcher par événement) ajoute
   la section `myconfig:croquis` (`hooks/croquis.ts`). Dans la bande, l'œil `croquis` (Œil 2) est
-  à gauche du bouton Confirmation : « 👁 » `primary` à On, `secondary` à Off.
+  à gauche du bouton Confirmation : « 👁 » `primary` à On, `secondary` à Off, le même œil dans les
+  deux cas (un œil barré, 👁 + U+20E0, s'affichait en deux cases vides dans l'app de bureau).
 - Progression, Titre 1 (choix de Dany) : `titreDe` coupe la consigne à un mot entier (`TITRE_MAX`).
   Quand `aResumer` (plus d'une ligne, ou plus de `TITRE_COURT` caractères) et que la Progression est
   à On, `turn.start` lance `resumerTitre` (une minuterie, sinon la promesse meurt avec le hook) :
   `$.model.complete` avec `haiku` et `CONSIGNE_TITRE`, nettoyé par `nettoyerTitre`, posé seulement
   si la tâche n'a pas changé (`p.debut`). Un échec garde la consigne.
-- Relais (0.8.0) : plus un module (absent de `MODULES`, de `Reglages` et de la bande) ; son bouton
-  `relais` est dans l'onglet Stats (`boutonRelais`), deux clics, grisé tant que `auTravail` (posé par
-  `turn.start`, retiré par `turn.complete` du fil principal). `/myconfig relais …` répond
-  `RELAIS_TOUJOURS`. Un onglet `relais` gardé dans `$.state` revient aux Stats.
-- Onglet Stats (choix de Dany, croquis C, `ongletStats`) : « Cette session », « Forfait », « Relais ».
+- Relais : plus un module depuis la 0.8.0 (absent de `MODULES` et de `Reglages`). Depuis la 1.0.1, son
+  bouton `relais` (« ♻ », « ♻ ? » au premier clic) est de nouveau dans la bande, entre ▶ et ⚙
+  (`boutonRelais`) : deux clics, grisé tant que `auTravail` (posé par `turn.start`, retiré par
+  `turn.complete` du fil principal). `/myconfig relais …` répond `RELAIS_TOUJOURS`. Un onglet
+  `relais` gardé dans `$.state` revient aux Stats.
+- Onglet Stats (choix de Dany, croquis C, `ongletStats`) : « Cette session » et « Forfait ».
   Le contenu du contexte vient de `$.session.usage({ breakdown: 'summary' })` (`mesurerRepartition`,
   estimation locale, rien n'est envoyé) et va dans `repartition` : relu à l'ouverture du panneau sur
   cet onglet, au clic sur l'onglet, et à chaque `session.measure` qui change le contexte quand
