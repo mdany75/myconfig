@@ -1,5 +1,14 @@
 # Changements
 
+## 1.2.1 — 2026-10-15
+
+### Corrigé
+- Correction : le modèle glissait parfois un commentaire avant le texte (« Correction : en fait, je
+  dois sortir uniquement le texte corrigé, sans balises. Voici : »), et ce commentaire allait dans
+  le champ de saisie. « ✓ Correction » et « ✎ Améliorer » demandent maintenant la réponse entre
+  `<texte_final>` et `</texte_final>`, et seul ce texte va dans le champ ; quand le modèle se
+  reprend, sa dernière version l'emporte. Une réponse sans balises est gardée entière, comme avant.
+
 ## 1.2.0 — 2026-10-15
 
 ### Ajouté

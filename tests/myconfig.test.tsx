@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import type { On, SessionContextUsage } from 'claude-code'
 
 import { estFeuVert, NOTE_ATTENTE, NOTE_FEU_VERT, REFUS, SECTION } from '../hooks/confirmation'
-import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE } from '../hooks/correction'
+import { CONSIGNE as CONSIGNE_PROMPT, CONSIGNE_ORTHOGRAPHE, nettoyer } from '../hooks/correction'
 import { SECTION as SECTION_CROQUIS } from '../hooks/croquis'
 import {
   cheminDansMarketplace,
@@ -1012,7 +1012,11 @@ describe('la Correction', () => {
       })
       on('model.complete', (_$, e) => {
         consignes.push(typeof e.system === 'string' ? e.system : '')
-        const texte = e.system === CONSIGNE_ORTHOGRAPHE ? 'Je veux que tu corriges ce texte.' : 'Objectif : corriger ce texte.'
+        // La correction arrive balisée et précédée d'un commentaire ; la reformulation, sans balise.
+        const texte =
+          e.system === CONSIGNE_ORTHOGRAPHE
+            ? 'Voici :\n<texte_final>\nJe veux que tu corriges ce texte.\n</texte_final>'
+            : 'Objectif : corriger ce texte.'
         return { value: { isAnswered: true as const, text: texte, usage: USAGE } }
       })
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
@@ -1035,6 +1039,34 @@ describe('la Correction', () => {
       await ui.unmount()
     })
   }
+})
+
+describe('la réponse du modèle de la Correction', () => {
+  test('seul le texte entre <texte_final> et </texte_final> va dans le champ', () => {
+    const texte = "Le bug arrive au moment où je mets ou enlève mes écouteurs."
+    expect(
+      nettoyer(
+        `Correction : en fait, je dois sortir uniquement le texte corrigé, sans balises. Voici :\n\n<texte_final>\n${texte}\n</texte_final>`,
+      ),
+    ).toBe(texte)
+    expect(nettoyer(`<texte_final>${texte}</texte_final>\n\nJ'ai corrigé « enleve ».`)).toBe(texte)
+  })
+
+  test('le dernier bloc l’emporte quand le modèle se reprend', () => {
+    expect(
+      nettoyer('<texte_final>\nPremier jet\n</texte_final>\nCorrection : en fait…\n<texte_final>\nTexte final\n</texte_final>'),
+    ).toBe('Texte final')
+  })
+
+  test('une réponse coupée garde la suite de la dernière balise ouvrante', () => {
+    expect(nettoyer('Voici :\n<texte_final>\nTexte coupé')).toBe('Texte coupé')
+  })
+
+  test('sans balise, la réponse entière, sans bloc de code', () => {
+    expect(nettoyer('  Texte seul.\n')).toBe('Texte seul.')
+    expect(nettoyer('```\nTexte seul.\n```')).toBe('Texte seul.')
+    expect(nettoyer('<texte_final>\n```text\nTexte seul.\n```\n</texte_final>')).toBe('Texte seul.')
+  })
 })
 
 describe('les boutons affichés de la Correction', () => {

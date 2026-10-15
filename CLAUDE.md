@@ -107,7 +107,9 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   cet onglet, au clic sur l'onglet, et à chaque `session.measure` qui change le contexte quand
   l'onglet est choisi. Le coût vient de `cost.usd` (`Mesure.cout`).
 - Correction : `correction` vaut toujours `ameliorer || corriger` (`avecBoutons` dans
-  `hooks/reglages.ts`) ; son onglet n'a pas d'On/Off, seulement « Afficher ».
+  `hooks/reglages.ts`) ; son onglet n'a pas d'On/Off, seulement « Afficher ». Les deux consignes
+  demandent la réponse entre `<texte_final>` et `</texte_final>` ; `nettoyer` (`hooks/correction.ts`)
+  ne garde que le dernier bloc balisé (la réponse entière s'il n'y en a pas).
 - Progression : `progression` vaut toujours `avecListe || sansListe` (`avecModes` dans
   `hooks/reglages.ts`) ; son onglet n'a pas d'On/Off, seulement « Afficher ». Un mode retiré ne
   montre rien dans son cas (`bandeProgression`), le suivi continue.
