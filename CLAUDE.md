@@ -91,11 +91,31 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   la section `myconfig:croquis` (`hooks/croquis.ts`). Dans la bande, l'œil `croquis` (Œil 2) est
   à gauche du bouton Confirmation : « 👁 » `primary` à On, `secondary` à Off, le même œil dans les
   deux cas (un œil barré, 👁 + U+20E0, s'affichait en deux cases vides dans l'app de bureau).
-- Progression, Titre 1 (choix de Dany) : `titreDe` coupe la consigne à un mot entier (`TITRE_MAX`).
-  Quand `aResumer` (plus d'une ligne, ou plus de `TITRE_COURT` caractères) et que la Progression est
-  à On, `turn.start` lance `resumerTitre` (une minuterie, sinon la promesse meurt avec le hook) :
-  `$.model.complete` avec `haiku` et `CONSIGNE_TITRE`, nettoyé par `nettoyerTitre`, posé seulement
-  si la tâche n'a pas changé (`p.debut`). Un échec garde la consigne.
+- Progression, Titre 1 (choix de Dany) : `titreDe` garde la première ligne entière (garde-fou
+  `LIBELLE_MAX`). Quand `aResumer` (plus d'une ligne, ou plus de `TITRE_COURT` caractères) et que la
+  Progression est à On, `turn.start` demande aussi le titre à `estimerTache` (une minuterie, sinon la
+  promesse meurt avec le hook) : `$.model.complete` avec `haiku` et `consigneTache(placeTitre(…))`, lu
+  par `lireTache` (`nettoyerTitre`), posé seulement si la tâche n'a pas changé (`p.debut`). Un échec
+  garde la consigne.
+- Temps total estimé (1.3.0, choix de Dany : croquis C, texte du croquis A, arrondi, même texte avec
+  liste) : `turn.start` d'une nouvelle tâche (consigne non vide) lance toujours `estimerTache` : un
+  seul appel Haiku, `consigneTache(place)` (titre et durée) pour une consigne longue,
+  `consigneTache(null)` (durée seule) sinon. `lireTache` / `lireDuree` lisent « Durée : 4 min »
+  (bornée à `ESTIME_MIN_MS`…`ESTIME_MAX_MS`) dans `p.estimeMs`. `totalEstime` prend le rythme des
+  étapes faites quand il y a une liste, sinon `estimeMs` ; `tempsTitre` donne « ⏱ 1 min 12 s » et
+  « / ≈ 4 min » (`arrondiEstime`), « · dépassé » au-delà (`ligneTitre`, paramètre `estime`, en
+  `warning` ; des Text seulement, un Button ne prend pas de Box). Sans liste, `remplissagePiste`
+  suit `écoulé / total` ; `pisteSvg(…, hachure, depasse)` hachure le reste
+  (`myconfig-hachure`) et passe à `AMBRE_DEPASSE` au-delà. Avec liste, la barre reste celle des
+  étapes ; seul le texte change, retiré en pause.
+- Largeur (1.3.0, demande de Dany) : aucun texte d'une ligne n'a de longueur fixe ; il suit
+  `e.props.bodyColumns`, qui dans l'app de bureau vient de la largeur réelle de la colonne (réglage
+  « Largeur de la conversation » : Étroit, Moyen, Large). `lettres(colonnes, terminal)` convertit en
+  lettres (`LETTRES_PAR_COLONNE_BUREAU` : le texte de l'app est proportionnel, plus étroit que la
+  cellule de sa police de code). `ligneTitre`, « En cours » (`bandePiste`) et l'étape en cours
+  (`bandeListe`) coupent au dessin avec `couperAuMot` et `wrap="truncate-end"`. `bande()` garde la
+  dernière largeur dans `largeurBande`, que lisent `estimerTache` (`placeTitre`) et `proposer`
+  (`placeSuite` : une suite en liste prend une ligne entière ; côte à côte, 45 caractères).
 - Relais : plus un module depuis la 0.8.0 (absent de `MODULES` et de `Reglages`). Depuis la 1.0.1, son
   bouton `relais` (« ♻ », « ♻ ? » au premier clic) est de nouveau dans la bande, entre ▶ et ⚙
   (`boutonRelais`) : deux clics, grisé tant que `auTravail` (posé par `turn.start`, retiré par
@@ -129,7 +149,7 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
   gris), coupé sur plusieurs rangées (`wrap="wrap"`) ; `pageJournal` prend la plus grande page dont
   les titres tiennent dans les rangées (`rangeesTexte`), et sa `taille` sert de pas à ▲ et ▼.
   `decrireOutil` garde la première ligne entière du libellé (garde-fou `LIBELLE_MAX`) ; seuls
-  `titreAction` (« En cours », une ligne, `TITRE_ACTION_MAX`) et une action montrée seule, plus
+  « En cours » (une ligne, coupée à la largeur de la bande) et une action montrée seule, plus
   haute que la place (`tenirEnRangees`, les `titres` de `pageJournal`), coupent le titre.
   Plus d'actions que de place : « ▲ » (`journal-haut`, à la place du trait) et « ▼ » (`journal-bas`)
   feuillettent par pages ; `journalAncre` garde l'id de la première action montrée (`null` : les
@@ -137,7 +157,7 @@ Les tests demandent Claude Code 2.1.295 ou plus récent.
 - Progression sans liste : le hook `tool.call` sans matcher (partagé avec la garde de la
   Confirmation) note chaque action du fil principal (`debuterAction` / `finirAction`) ; les
   actions consécutives de même sorte forment un segment (`BLOCS_MAX` au plus). La piste se remplit
-  à `t / (t + 15 s)` et passe à 100 % à la fin. Un chrono `$.clock.every(1000)` tourne de
+  à `t / (t + 15 s)` tant qu'il n'y a pas d'estimation, et passe à 100 % à la fin. Un chrono `$.clock.every(1000)` tourne de
   `turn.start` à `turn.complete`.
 - Ne pas activer en même temps jauge, fil, fil-son, relais, plume ou cap.
 - Avant de pousser une fonctionnalité : README et CHANGELOG à jour, capture d'écran

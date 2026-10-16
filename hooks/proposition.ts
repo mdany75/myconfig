@@ -3,10 +3,12 @@
 import type { Disposition } from '../types'
 import { borner } from './reglages'
 
-// Côte à côte, les suites doivent être plus courtes pour tenir sur la ligne.
-export const longueurMax = (disposition: Disposition) => (disposition === 'ligne' ? 45 : 70)
+// Côte à côte, les suites doivent être plus courtes pour tenir sur la ligne. En liste, chacune
+// peut prendre une ligne entière de la bande : `place` lettres (0 tant que la largeur est inconnue).
+export const longueurMax = (disposition: Disposition, place = 0) =>
+  disposition === 'ligne' ? 45 : place > 0 ? Math.max(30, place) : 70
 
-export function consigne(nombre: number, disposition: Disposition) {
+export function consigne(nombre: number, disposition: Disposition, place = 0) {
   const n = borner(nombre)
   const quoi = n === 1 ? 'exactement 1 suite logique' : `exactement ${n} suites logiques`
   const variete =
@@ -15,7 +17,7 @@ export function consigne(nombre: number, disposition: Disposition) {
       : '- variées : approfondir, vérifier, corriger ou étendre, passer à l’étape suivante.'
   return `Propose ${quoi} à la conversation, rédigées comme des consignes que l'utilisateur pourrait m'envoyer maintenant.
 Règles :
-- en français, à l'impératif, une phrase courte chacune (${longueurMax(disposition)} caractères au plus) ;
+- en français, à l'impératif, une phrase chacune (${longueurMax(disposition, place)} caractères au plus) ;
 - concrètes et propres à ce qui vient d'être fait, pas de formules génériques ;
 ${variete}
 Réponds uniquement par un tableau JSON de ${n} chaîne(s), sans aucun autre texte.`

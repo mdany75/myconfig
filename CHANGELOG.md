@@ -1,5 +1,28 @@
 # Changements
 
+## 1.3.0 — 2026-10-15
+
+### Ajouté
+- Progression, temps total estimé (choix de Dany : croquis C avec le texte du croquis A). La ligne du
+  titre dit « ⏱ 1 min 12 s / ≈ 4 min ». Sans liste de tâches, l'estimation vient d'un petit modèle
+  (Haiku), qui devine la durée au début de chaque tâche à partir de la consigne, dans le même appel
+  que le résumé du titre. La piste se remplit alors au rythme de ce temps, et le reste est hachuré
+  pâle. Une fois l'estimation dépassée, la piste passe à l'ambre et le titre dit « / ≈ 4 min ·
+  dépassé ». L'estimation est arrondie (« ≈ 40 s », « ≈ 4 min », « ≈ 1 h 10 »).
+- Avec une liste de tâches, le même texte remplace « ~3 min » : « 50 % · ⏱ 4 min 00 s / ≈ 8 min ». Le
+  total suit le rythme des étapes faites, ou l'estimation de Haiku avant la première.
+
+### Modifié
+- Les textes d'une ligne suivent la largeur de la bande, donc le réglage « Largeur de la
+  conversation » de l'app (Étroit, Moyen, Large) et la largeur du terminal, au lieu de longueurs
+  fixes :
+  - « En cours : … » sous la piste n'est plus coupé à 48 caractères, seulement au bord de la bande ;
+  - le titre de la Progression n'est plus coupé à 60 caractères, et le résumé de Haiku peut être
+    aussi long que la ligne ;
+  - l'étape en cours, sous le chapelet, est coupée à la largeur au lieu de passer à la ligne ;
+  - en liste (une par ligne), une proposition peut prendre une ligne entière (70 caractères avant) ;
+    côte à côte, elles restent à 45 caractères.
+
 ## 1.2.1 — 2026-10-15
 
 ### Corrigé

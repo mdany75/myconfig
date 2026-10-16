@@ -143,6 +143,8 @@ export type Progression = {
   journal?: ActionJournal[]
   /** Vrai quand un clic l'a effacée, ou qu'une interruption l'a retirée ; elle reprend au tour suivant. */
   effacee?: boolean
+  /** Le temps total que le petit modèle a estimé au début, en ms (absent avant la 1.3.0, ou sans réponse). */
+  estimeMs?: number
 }
 
 /**

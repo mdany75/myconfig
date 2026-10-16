@@ -20,8 +20,11 @@ import {
 import {
   actionCourante,
   appliquerTodos,
+  AMBRE_DEPASSE,
   aResumer,
-  CONSIGNE_TITRE,
+  arrondiEstime,
+  consigneTache,
+  couperAuMot,
   chapelet,
   compter,
   ancrePrecedente,
@@ -34,18 +37,24 @@ import {
   LIBELLE_MAX,
   libelleOutil,
   lignesJournal,
+  lireDuree,
+  lireTache,
   majEtape,
   nettoyerTitre,
   nouvelle,
   pageJournal,
+  pisteSvg,
   rangeesTexte,
   pourcentage,
   remplissagePiste,
   repartir,
-  resteEstime,
   segmentsPiste,
   sorteDe,
+  tempsTitre,
   tenirEnRangees,
+  totalEstime,
+  lettres,
+  placeTitre,
   titreDe,
   totalActions,
   visible,
@@ -237,6 +246,9 @@ describe('fonctions pures', () => {
     expect(extraire('1. Lance les tests\n2) Ajoute un README', 5)).toEqual(['Lance les tests', 'Ajoute un README'])
     expect(consigne(1, 'ligne')).toContain('exactement 1 suite logique')
     expect(consigne(4, 'liste')).toContain('70 caractères')
+    // En liste, une suite peut prendre une ligne entière de la bande ; côte à côte, elles restent courtes.
+    expect(consigne(4, 'liste', 120)).toContain('120 caractères')
+    expect(consigne(4, 'ligne', 120)).toContain('45 caractères')
   })
 
   test('les limites d’utilisation', () => {
@@ -299,8 +311,48 @@ describe('la Progression (fonctions pures)', () => {
     expect(compter(p)).toEqual({ faites: 3, total: 7, courante: p.etapes[3], rang: 4 })
     expect(pourcentage(p)).toBe(50)
     expect(chapelet(p)).toEqual({ faits: '● ● ●', courant: '◉', restants: '○ ○ ○', reste: 0 })
-    expect(resteEstime(p, 4 * 60_000)).toBe('~4 min')
-    expect(resteEstime(nouvelle('x', 0), 60_000)).toBe('')
+    // Le temps total au rythme des étapes : 50 % en 4 min, donc environ 8 min.
+    expect(totalEstime(p, 4 * 60_000)).toBe(8 * 60_000)
+    expect(totalEstime(nouvelle('x', 0), 60_000)).toBe(null)
+  })
+
+  test('l’estimation du temps total : celle du modèle, puis le rythme des étapes ; arrondie', () => {
+    const p = { ...nouvelle('Publier la 1.3.0', 0), estimeMs: 258_000 }
+    expect(totalEstime(p, 72_000)).toBe(258_000)
+    // Croquis A : le chrono, puis l'estimation arrondie (choix de Dany) ; « · dépassé » au-delà.
+    expect(tempsTitre(p, 72_000)).toEqual({ ecoule: '⏱ 1 min 12 s', estime: '/ ≈ 4 min', depasse: false })
+    expect(tempsTitre(p, 258_000).depasse).toBe(false)
+    expect(tempsTitre(p, 259_000)).toEqual({ ecoule: '⏱ 4 min 19 s', estime: '/ ≈ 4 min · dépassé', depasse: true })
+    expect(tempsTitre(nouvelle('x', 0), 5_000)).toEqual({ ecoule: '⏱ 5 s', estime: '', depasse: false })
+    // Une liste avec une étape faite prend le relais du modèle.
+    const liste = { ...appliquerTodos(nouvelle('Migration', 0), TODOS, 60_000), estimeMs: 60_000 }
+    expect(totalEstime(liste, 4 * 60_000)).toBe(8 * 60_000)
+    expect(arrondiEstime(4_000)).toBe('≈ 10 s')
+    expect(arrondiEstime(42_000)).toBe('≈ 40 s')
+    expect(arrondiEstime(58_000)).toBe('≈ 1 min')
+    expect(arrondiEstime(258_000)).toBe('≈ 4 min')
+    expect(arrondiEstime(68 * 60_000)).toBe('≈ 1 h 10')
+  })
+
+  test('la durée que donne le modèle, et son titre dans la même réponse', () => {
+    expect(lireDuree('Durée : 4 min')).toBe(240_000)
+    expect(lireDuree('Durée : 0,5 min')).toBe(30_000)
+    expect(lireDuree('Durée : 45 s')).toBe(45_000)
+    expect(lireDuree('Durée : 1 h 30')).toBe(5_400_000)
+    expect(lireDuree('Durée : 3')).toBe(180_000)
+    expect(lireDuree('Durée : 900 minutes')).toBe(4 * 3_600_000)
+    expect(lireDuree('Durée : 0 min')).toBe(null)
+    expect(lireDuree('Durée : inconnue')).toBe(null)
+    expect(lireTache('Titre : Corriger 2 défauts et publier la 0.8.0\nDurée : 4 min')).toEqual({
+      titre: 'Corriger 2 défauts et publier la 0.8.0',
+      estimeMs: 240_000,
+    })
+    expect(lireTache('Durée : 2 min')).toEqual({ titre: '', estimeMs: 120_000 })
+    expect(lireTache('« mettre à jour le git »')).toEqual({ titre: 'Mettre à jour le git', estimeMs: null })
+    // Le titre n'est demandé que pour une consigne longue.
+    expect(consigneTache(120)).toContain('en au plus 120 caractères')
+    expect(consigneTache(null)).not.toContain('titre')
+    expect(consigneTache(null)).toContain('Durée :')
   })
 
   test('une liste inachevée continue au tour suivant, une liste finie laisse place à la suivante', () => {
@@ -575,6 +627,14 @@ describe('la Progression sans liste (fonctions pures)', () => {
     expect(visible(p, 9_000)).toBe(true)
     expect(remplissagePiste(p, 15_000)).toBe(0.5)
     expect(remplissagePiste({ ...p, fin: 20_000 }, 20_000)).toBe(1)
+    // Croquis C : avec une estimation, la piste se remplit au temps estimé ; le reste est hachuré.
+    expect(remplissagePiste({ ...p, estimeMs: 60_000 }, 30_000)).toBe(0.5)
+    expect(remplissagePiste({ ...p, estimeMs: 60_000 }, 90_000)).toBe(1)
+    const segments = segmentsPiste(p, 9_000)
+    expect(pisteSvg(segments, 0.5, 400, false, true, false)).toContain('url(#myconfig-hachure)')
+    expect(pisteSvg(segments, 0.5, 400, false, false, false)).not.toContain('myconfig-hachure')
+    expect(pisteSvg(segments, 1, 400, false, true, true)).toContain(AMBRE_DEPASSE)
+    expect(pisteSvg(segments, 1, 400, false, true, true)).not.toContain('url(#myconfig-hachure)')
     expect(repartir([2, 7], 30)).toEqual([7, 23])
     expect(repartir([1, 1, 1], 10).reduce((a, b) => a + b, 0)).toBe(10)
   })
@@ -592,14 +652,14 @@ describe('la Progression sans liste (fonctions pures)', () => {
     expect(libelleOutil('Bash', bash)).toBe('Bash · Lance les tests')
   })
 
-  test('un long titre : entier pour le journal, coupé seulement pour « En cours »', () => {
+  test('un long titre : entier pour le journal et pour « En cours », que la bande coupe à sa largeur', () => {
     const chercher = { command: 'grep -i error ~/.claude/debug/latest', description: `${LONG_TITRE}\nsuite` }
     expect(decrireOutil('Bash', chercher)).toEqual({
       nom: 'Bash',
       libelle: LONG_TITRE,
       complement: 'grep -i error ~/.claude/debug/latest',
     })
-    expect(libelleOutil('Bash', chercher)).toBe('Bash · Chercher les erreurs du mod dans le journal de …')
+    expect(libelleOutil('Bash', chercher)).toBe(`Bash · ${LONG_TITRE}`)
     // Un garde-fou pour une commande d'une ligne immense.
     const immense = decrireOutil('Bash', { command: `echo ${'x'.repeat(1_000)}` }).libelle
     expect(immense).toHaveLength(LIBELLE_MAX)
@@ -647,14 +707,22 @@ describe('la Progression sans liste (fonctions pures)', () => {
   test('Titre 1 : le titre de la tâche en une ligne', () => {
     expect(titreDe('met à jour le git')).toBe('Met à jour le git')
     expect(titreDe('')).toBe('Suite du travail')
-    const long = titreDe('est ce que le titre ou la commande qui est affiché au dessus de la barre de progression peut-être un résumé')
-    expect(long.length).toBeLessThanOrEqual(60)
-    expect(long.endsWith('…')).toBe(true)
-    expect(long).not.toMatch(/\s…$/)
+    // Le titre est gardé entier ; la bande le coupe à un mot entier, à sa largeur.
+    const consigneLongue = 'est ce que le titre ou la commande qui est affiché au dessus de la barre de progression peut-être un résumé'
+    const long = titreDe(consigneLongue)
+    expect(long).toBe(`E${consigneLongue.slice(1)}`)
+    const coupe = couperAuMot(long, 60)
+    expect(coupe.length).toBeLessThanOrEqual(60)
+    expect(coupe.endsWith('…')).toBe(true)
+    expect(coupe).not.toMatch(/\s…$/)
     // Un résumé seulement pour une consigne longue, ou de plusieurs lignes.
     expect(aResumer('met à jour le git')).toBe(false)
     expect(aResumer('corrige les deux défauts, puis publie la version 0.8.0 de MyConfig')).toBe(true)
     expect(aResumer('Lis ceci\npuis fais cela')).toBe(true)
+    // La place du titre suit la largeur de la bande ; l'app de bureau y écrit plus de lettres.
+    expect(placeTitre(0, true)).toBe(48)
+    expect(placeTitre(140, true)).toBe(110)
+    expect(placeTitre(140, false)).toBeGreaterThan(110)
     // La réponse du modèle, ramenée à un titre propre.
     expect(nettoyerTitre('« corriger 2 défauts et publier la 0.8.0. »')).toBe('Corriger 2 défauts et publier la 0.8.0')
     expect(nettoyerTitre('Titre : Mettre à jour le git\n\nExplication…')).toBe('Mettre à jour le git')
@@ -703,13 +771,13 @@ describe('la Progression sans liste dans la bande', () => {
     test(`une piste par action, l’action en cours, 100 % et ✓ à la fin (${surface})`, async ($, on) => {
       const horloge = simuler(on)
       on('turn.start', (_$, e) => ({ turnId: e.turnId }))
-      // Pendant la commande Bash, la bande doit nommer l'action en cours.
+      // Pendant la commande Bash, la bande doit nommer l'action en cours : entière dans une bande large.
       let enCoursVu = false
-      let chercher: ((texte: RegExp) => Promise<boolean>) | undefined
+      let chercher: ((texte: string) => Promise<boolean>) | undefined
       on('tool.call', async (_$, e) => {
         await horloge.advance(e.tool === 'Bash' ? 4_000 : 1_000)
         if (e.tool === 'Bash' && chercher !== undefined) {
-          enCoursVu = await chercher(/^En cours : Bash · Lance les tests/)
+          enCoursVu = await chercher(`En cours : Bash · ${LONG_TITRE}`)
         }
         return { result: {}, text: 'ok' }
       })
@@ -719,7 +787,7 @@ describe('la Progression sans liste dans la bande', () => {
       expect(await ui.find({ key: 'progression' })).toBeUndefined()
 
       await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/x/README.md' })
-      await $.tool.call({ tool: 'Bash', tool_use_id: 'b1', command: 'claude plugin test .', description: 'Lance les tests' })
+      await $.tool.call({ tool: 'Bash', tool_use_id: 'b1', command: 'claude plugin test .', description: LONG_TITRE })
       expect(enCoursVu).toBe(true)
       expect(await ui.find({ key: 'progression-piste' })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: 'Publie la version' })).toBeDefined()
@@ -792,26 +860,31 @@ describe('la Progression sans liste dans la bande', () => {
       await ui.unmount()
     })
 
-    test(`un long titre reste entier dans le journal, sur plusieurs rangées ; « En cours » le coupe (${surface})`, async ($, on) => {
+    test(`un long titre reste entier dans le journal, sur plusieurs rangées ; « En cours » le coupe à la largeur (${surface})`, async ($, on) => {
       const horloge = simuler(on)
       on('turn.start', (_$, e) => ({ turnId: e.turnId }))
-      let enCoursVu = false
-      let chercher: ((texte: string) => Promise<boolean>) | undefined
+      let enCours: string | undefined
+      let lire: (() => Promise<string | undefined>) | undefined
       on('tool.call', async (_$, e) => {
         await horloge.advance(e.tool === 'Bash' ? 4_000 : 1_000)
-        if (e.tool === 'Bash' && chercher !== undefined) {
-          enCoursVu = await chercher('En cours : Bash · Chercher les erreurs du mod dans le journal de …')
+        if (e.tool === 'Bash' && lire !== undefined) {
+          enCours = await lire()
         }
         return { result: {}, text: 'ok' }
       })
       // Une bande étroite : le titre y prend 3 rangées, sur les 3 que le journal a.
       const etroite = { ...bande, props: { ...bande.props, bodyColumns: 60 } }
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...etroite })
-      chercher = async texte => (await ui.find({ type: 'Text', text: texte })) !== undefined
+      lire = async () => {
+        return (await ui.find({ type: 'Text', text: /^En cours : / }))?.text
+      }
       await $.turn.start({ text: 'Cherche les erreurs', turnId: 't1' })
       await $.tool.call({ tool: 'Read', tool_use_id: 'r1', file_path: '/x/README.md' })
       await $.tool.call({ tool: 'Bash', tool_use_id: 'b1', command: 'grep -i error ~/.claude/debug/latest', description: LONG_TITRE })
-      expect(enCoursVu).toBe(true)
+      // Coupé à un mot entier pour tenir à droite de la légende (« ● Lecture ×1   ● Bash ×1 ▼ »).
+      expect(enCours).toMatch(/^En cours : Bash · Cherch[^…]*[^\s…]…$/)
+      const legende = '● Lecture ×1   ● Bash ×1 ▼'.length
+      expect(enCours?.length ?? 0).toBeLessThanOrEqual(lettres(56, surface === 'terminal') - legende - 2)
 
       await ui.press({ key: 'progression-detail' })
       const titre = await ui.find({ type: 'Text', text: LONG_TITRE })
@@ -1315,13 +1388,15 @@ describe('les Croquis', () => {
 
 describe('le titre de la Progression (Titre 1)', () => {
   for (const surface of SURFACES) {
-    test(`une consigne longue est résumée en une ligne, une courte reste telle quelle (${surface})`, async ($, on) => {
+    test(`une consigne longue est résumée en une ligne, une courte reste telle quelle ; chacune reçoit une durée (${surface})`, async ($, on) => {
       const horloge = simuler(on)
       simulerTours(on)
       const appels: string[] = []
       on('model.complete', (_$, e) => {
-        appels.push(typeof e.system === 'string' ? e.system : '')
-        return { value: { isAnswered: true as const, text: '« corriger 2 défauts et publier la 0.8.0. »', usage: USAGE } }
+        const system = typeof e.system === 'string' ? e.system : ''
+        appels.push(system)
+        const text = system.includes('Ligne 2') ? '« corriger 2 défauts et publier la 0.8.0. »\nDurée : 4 min' : 'Durée : 1 min'
+        return { value: { isAnswered: true as const, text, usage: USAGE } }
       })
       const ui = await $.ui.mount({ plugin: 'myconfig', surface, ...bande })
 
@@ -1332,14 +1407,16 @@ describe('le titre de la Progression (Titre 1)', () => {
         await horloge.advance(50)
       }
       expect(await ui.find({ type: 'Text', text: 'Corriger 2 défauts et publier la 0.8.0' })).toBeDefined()
-      expect(appels).toEqual([CONSIGNE_TITRE])
+      expect(appels).toEqual([consigneTache(placeTitre(bande.props.bodyColumns, surface === 'terminal'))])
+      expect(await ui.find({ type: 'Text', text: '/ ≈ 4 min' })).toBeDefined()
 
       await $.turn.complete({ reason: 'answer', answer: 'fait', durationMs: 1000, isAborted: false, turnId: 't1' })
       await $.turn.start({ text: 'met à jour le git', turnId: 't2' })
       await $.tool.call({ tool: 'Read', tool_use_id: 'r2', file_path: '/x/b.md' })
       await horloge.advance(500)
       expect(await ui.find({ type: 'Text', text: 'Met à jour le git' })).toBeDefined()
-      expect(appels).toHaveLength(1)
+      expect(appels).toEqual([consigneTache(placeTitre(bande.props.bodyColumns, surface === 'terminal')), consigneTache(null)])
+      expect(await ui.find({ type: 'Text', text: '/ ≈ 1 min' })).toBeDefined()
       await ui.unmount()
     })
   }

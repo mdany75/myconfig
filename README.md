@@ -25,6 +25,10 @@ chiffres ; un panneau à onglets règle chaque module.
 Au-dessus du champ de saisie, une carte arrondie (croquis 1, « Tableau de bord ») :
 
 - Les propositions en haut, côte à côte ou une par ligne, puis une ligne vide avant les boutons.
+- Les textes d'une ligne (titre de la Progression, « En cours », étape en cours, propositions une
+  par ligne) prennent toute la largeur de la bande et ne sont coupés (« … ») qu'à son bord. Ils
+  suivent donc le réglage « Largeur de la conversation » de l'app (Étroit, Moyen, Large) et la
+  largeur du terminal.
 - La Correction à gauche, puis à droite les Stats (un anneau de contexte dessiné dans l'app de
   bureau, un quart de disque au terminal), l'œil des Croquis, le bouton Confirmation, le Relais (♻)
   et ⚙, qui ouvre le panneau.
@@ -96,17 +100,18 @@ retiré ne montre rien dans son cas, et l'autre ne prend pas sa place.
 en haut de la carte (variante 1, « barre fine et chapelet ») :
 
 ```
-Migration des presets                                        50 % · ~4 min
+Migration des presets                         50 % · ⏱ 4 min 00 s / ≈ 8 min
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ● ● ● ◉ ○ ○ ○   Étape 4 sur 7 · Valider
 ```
 
 - Le titre résume ta consigne en une ligne (Titre 1) : une consigne courte sert telle quelle ; une
   consigne longue, ou de plusieurs lignes, est résumée par un petit modèle (Haiku) en un titre à
-  l'infinitif d'au plus 50 caractères (« Corriger 2 défauts et publier la 0.8.0 »). Ta consigne
+  l'infinitif qui tient sur la ligne de la bande (« Corriger 2 défauts et publier la 0.8.0 »). Ta consigne
   s'affiche en attendant, environ une seconde, et reste le titre si le résumé échoue. À droite, le %
-  (étapes faites, plus la moitié de celle en cours) et le temps restant estimé au rythme des étapes
-  déjà faites.
+  (étapes faites, plus la moitié de celle en cours), le temps écoulé et le temps total estimé,
+  arrondi : au rythme des étapes déjà faites, ou, avant la première, l'estimation de Haiku (voir
+  plus bas).
 - Le chapelet : ● étape faite, ◉ étape en cours, ○ étape restante.
 - Une tâche finie passe au vert avec « ✓ 7 étapes · durée » et reste le temps choisi dans le
   panneau (« Disparaît après » : instantané, 5, 10 ou 15 secondes, 15 par défaut, ou jamais) ; un
@@ -118,16 +123,21 @@ Migration des presets                                        50 % · ~4 min
 modification…), la piste suit ses actions :
 
 ```
-Publie la version 0.3.0 de MyConfig                                ⏱ 1 min 12 s
+Publie la version 0.3.0 de MyConfig                      ⏱ 1 min 12 s / ≈ 4 min
 ███████▓▓▓▓▓▓▓▓▓▓▓▓▓████████████████████▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 ●  Bash ×3   ●  Lecture ×2   ●  Modif. ×1          En cours : Bash · Commit, push…
 ```
 
 - Un segment par suite d'actions de même sorte, aussi long qu'elles ont duré : bleu pour les
   commandes, violet pour les lectures, vert pour les modifications, gris pour le reste.
-- La piste se remplit de gauche à droite, de plus en plus lentement (la durée totale n'est pas
-  connue d'avance), et atteint 100 % quand la tâche se termine : tout passe alors au vert, avec
-  « ✓ 8 actions · durée ».
+- Le temps total estimé (croquis C, texte du croquis A) : au début de chaque tâche, un petit modèle
+  (Haiku) devine sa durée à partir de ta consigne, dans le même appel que le résumé du titre. C'est
+  un ordre de grandeur, arrondi (« ≈ 40 s », « ≈ 4 min », « ≈ 1 h 10 »). La piste se remplit alors
+  au rythme de ce temps, et ce qui reste est hachuré pâle (dans le terminal, « ░ »). Une fois
+  l'estimation dépassée, la piste passe à l'ambre et le titre dit « / ≈ 4 min · dépassé ».
+- Sans estimation (pendant la seconde où Haiku répond, ou s'il échoue), la piste se remplit de
+  plus en plus lentement, comme avant.
+- À la fin, la piste atteint 100 % et tout passe au vert, avec « ✓ 8 actions · durée ».
 - Le chrono avance chaque seconde ; dessous, un point par sorte d'action avec son nombre, puis
   l'action en cours.
 - Dès que Claude crée une liste de tâches, la barre des étapes prend le relais (si « Avec liste »
@@ -145,7 +155,7 @@ dessous qui prend le clic.
   titre en entier, sur plusieurs lignes au besoin (le fichier, la description de la commande, le
   motif), et sa durée. Quand de longs titres prennent plus de place, la page compte moins d'actions ;
   seul un titre trop haut pour toute la place de la bande est coupé (« … »). « En cours », sur une
-  ligne, le coupe à 48 caractères.
+  ligne, le coupe seulement au bord de la bande.
 - Plus d'actions que de place : « ▲ N actions plus anciennes » remplace le trait au-dessus du
   journal, avec la position à droite (« 4–6 sur 12 ») ; un clic recule d'une page (autant d'actions
   que le « Détail »), et « ▼ N plus récentes », dessous, avance. La page reste en place quand de

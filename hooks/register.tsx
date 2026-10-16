@@ -43,12 +43,14 @@ import {
   actionCourante,
   aResumer,
   ajouterEtape,
-  CONSIGNE_TITRE,
   ancrePrecedente,
   ancreSuivante,
   appliquerTodos,
   chapelet,
+  AMBRE_DEPASSE,
   compter,
+  consigneTache,
+  couperAuMot,
   debuterAction,
   decrireOutil,
   demarrer,
@@ -58,19 +60,21 @@ import {
   EXEMPLE_MS,
   EXEMPLE_SANS_LISTE,
   finirAction,
+  lettres,
+  lireTache,
   majEtape,
-  nettoyerTitre,
   pageJournal,
   NOMS_SORTES,
   pisteSvg,
+  placeTitre,
   pourcentage,
   remplissagePiste,
   repartir,
-  resteEstime,
   segmentsPiste,
   sorteDe,
   suivre,
   TEINTES_SORTES,
+  tempsTitre,
   terminee,
   titreAction,
   totalActions,
@@ -191,6 +195,9 @@ let relaisEnCours = false
 let chrono: { cancel: () => unknown } | undefined
 // Progression : seul le dernier exemple lancé du panneau compte.
 let exempleGeneration = 0
+// La largeur de la bande au dernier dessin (`bodyColumns`, 0 : pas encore dessinée) : le titre résumé
+// et les propositions écrites hors du dessin s'y ajustent. Elle suit « Largeur de la conversation ».
+let largeurBande = { colonnes: 0, terminal: true }
 
 // Dans l'app de bureau, une colonne de la bande fait près de 8 px : à 7, la piste et la barre de la
 // Progression s'arrêtaient vers 87 % de la carte.
@@ -198,6 +205,7 @@ const PX_PAR_COLONNE = 7.9
 // Le chevron qui déplie le journal : ▼ / ▲ pleine taille (▾ / ▴ étaient minuscules dans l'app).
 const CHEVRON_FERME = ' ▼'
 const CHEVRON_OUVERT = ' ▲'
+const EN_COURS = 'En cours : '
 
 type Bande = RenderInput<'AbovePrompt'>
 type Panneau = RenderInput<'Pane'>
@@ -498,23 +506,30 @@ const resteMs = (r: Reglages) => (r.disparaitApres === null ? Infinity : r.dispa
 
 // ── Progression ───────────────────────────────────────────────────────────────
 
-// Titre 1 : un petit modèle (Haiku) résume la consigne en une ligne ; la consigne reste le titre
-// en attendant, et pour de bon si l'appel échoue. Une autre tâche commencée entre-temps garde le sien.
-async function resumerTitre($: EngineInterface, depuis: number, texte: string) {
+// Au début d'une tâche, un petit modèle (Haiku) estime sa durée (croquis C) et, pour une consigne
+// longue (Titre 1), la résume en une ligne, dans le même appel. La consigne reste le titre en
+// attendant, et pour de bon si l'appel échoue ; sans durée, la piste se remplit comme avant.
+// Une autre tâche commencée entre-temps garde les siens.
+async function estimerTache($: EngineInterface, depuis: number, texte: string, resumer: boolean) {
   try {
     const reponse = await $.model.complete({
       model: 'haiku',
-      system: CONSIGNE_TITRE,
+      system: consigneTache(resumer ? placeTitre(largeurBande.colonnes, largeurBande.terminal) : null),
       prompt: enveloppeTitre(texte),
-      maxTokens: 60,
+      maxTokens: 80,
       timeoutMs: 20_000,
     })
-    const titre = reponse.isAnswered ? nettoyerTitre(reponse.text) : ''
-    if (titre !== '') {
-      await changerProgression($, p => (p.debut === depuis ? { ...p, titre } : p))
+    if (!reponse.isAnswered) {
+      return
     }
+    const { titre, estimeMs } = lireTache(reponse.text)
+    await changerProgression($, p =>
+      p.debut !== depuis
+        ? p
+        : { ...p, ...(resumer && titre !== '' ? { titre } : {}), ...(estimeMs === null ? {} : { estimeMs }) },
+    )
   } catch {
-    // Le titre reste la consigne.
+    // Le titre reste la consigne, la piste sans estimation.
   }
 }
 
@@ -595,6 +610,7 @@ async function montrerExempleSansListe($: EngineInterface) {
     fin: null,
     etapes: [],
     exemple: true,
+    estimeMs: 26_000,
     blocs: [],
     comptes: {},
   })
@@ -634,7 +650,7 @@ async function proposer($: EngineInterface, nombre: number, disposition: Disposi
   await $.state.set(suites, null)
   await $.state.set(suitesEnCours, true)
   try {
-    const reponse = await $.model.fork({ prompt: consigneProposition(nombre, disposition) })
+    const reponse = await $.model.fork({ prompt: consigneProposition(nombre, disposition, placeSuite()) })
     if (numero !== generation) {
       return
     }
@@ -647,6 +663,12 @@ async function proposer($: EngineInterface, nombre: number, disposition: Disposi
       await $.state.set(suitesEnCours, false)
     }
   }
+}
+
+// Les lettres d'une suite en liste : la bande moins ✦, l'espace, le cadre du bouton et ↻.
+function placeSuite() {
+  const { colonnes, terminal } = largeurBande
+  return colonnes <= 0 ? 0 : lettres(colonnes - 4 - 2 - 4 - 6, terminal)
 }
 
 async function oublierSuites($: EngineInterface) {
@@ -1181,17 +1203,36 @@ function ligneTitre(
   fini: boolean,
   droiteEnVert: boolean,
   effacable: boolean,
+  estime: { texte: string; depasse: boolean } = { texte: '', depasse: false },
 ): RenderElement {
   const { Box, Button, Text } = $.ui.resolve(e)
+  // Le titre prend la largeur de la bande, moins le temps (ou le %), l'estimation et le ✕.
+  const largeur = Math.max(10, e.props.bodyColumns - 4)
+  const aEstime = estime.texte !== ''
+  const place =
+    lettres(largeur, e.surface === 'terminal') - droite.length - (aEstime ? estime.texte.length + 1 : 0) - 1 - (effacable ? 3 : 0)
   const gauche = (
-    <Text bold color={fini ? 'success' : undefined}>
-      {titre}
+    <Text bold color={fini ? 'success' : undefined} wrap="truncate-end">
+      {couperAuMot(titre, Math.max(10, place))}
     </Text>
   )
-  const aDroite = (
+  const temps = (
     <Text color={droiteEnVert ? 'success' : undefined} dimColor={!droiteEnVert}>
       {droite}
     </Text>
+  )
+  // Croquis A : « ⏱ 1 min 12 s / ≈ 4 min » ; « · dépassé » en ambre. Des Text seulement : un
+  // Button (titre effaçable) ne peut pas contenir de Box.
+  const aDroite = aEstime ? (
+    <Text>
+      {temps}
+      {' '}
+      <Text color={estime.depasse ? 'warning' : undefined} dimColor={!estime.depasse}>
+        {estime.texte}
+      </Text>
+    </Text>
+  ) : (
+    temps
   )
   return (
     <Box key="progression-titre" flexDirection="row" gap={1}>
@@ -1225,8 +1266,11 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
   const part = remplissagePiste(p, instant)
   const n = totalActions(p)
   const ecoule = duree((p.fin ?? instant) - p.debut)
-  const droite = fini ? `✓ ${n} action${n > 1 ? 's' : ''} · ${ecoule}` : `⏱ ${ecoule}`
+  const temps = tempsTitre(p, instant)
+  const droite = fini ? `✓ ${n} action${n > 1 ? 's' : ''} · ${ecoule}` : temps.ecoule
+  const depasse = !fini && temps.depasse
   const teinte = (s: SorteAction) => (fini ? VERT_FIN : TEINTES_SORTES[s])
+  const teintePiste = (s: SorteAction) => (depasse ? AMBRE_DEPASSE : teinte(s))
 
   const largeur = Math.max(10, e.props.bodyColumns - 4)
   let piste: RenderElement
@@ -1236,7 +1280,7 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
       fini ? largeur : Math.round(part * largeur),
     )
     const morceaux = segments.map((s, i) => (
-      <Text color={teinte(s.sorte)}>{(s.enCours && !fini ? '▓' : '█').repeat(parts[i] ?? 0)}</Text>
+      <Text color={teintePiste(s.sorte)}>{(s.enCours && !fini ? '▓' : '█').repeat(parts[i] ?? 0)}</Text>
     ))
     const vide = Math.max(0, largeur - parts.reduce((a, b) => a + b, 0))
     piste = (
@@ -1252,7 +1296,7 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
     const px = Math.round(largeur * PX_PAR_COLONNE)
     piste = (
       <Svg
-        source={pisteSvg(segments, part, px, fini)}
+        source={pisteSvg(segments, part, px, fini, temps.estime !== '', depasse)}
         alt={`${p.titre} : ${n} action${n > 1 ? 's' : ''}, ${ecoule}`}
         width={px}
         height={8}
@@ -1263,18 +1307,24 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
   // Un point par sorte d'action, avec son nombre ; puis l'action en cours, ou la fin.
   const sortes: SorteAction[] = ['bash', 'lecture', 'modif', 'autre']
   const legende: RenderElement[] = []
+  let lettresLegende = CHEVRON_FERME.length
   for (const s of sortes) {
     const nombre = p.comptes?.[s] ?? 0
     if (nombre > 0) {
-      legende.push(<Text color={teinte(s)}>{`${legende.length > 0 ? '   ' : ''}●`}</Text>)
-      legende.push(<Text dimColor>{` ${NOMS_SORTES[s]} ×${nombre}`}</Text>)
+      const point = `${legende.length > 0 ? '   ' : ''}●`
+      const texte = ` ${NOMS_SORTES[s]} ×${nombre}`
+      legende.push(<Text color={teinte(s)}>{point}</Text>)
+      legende.push(<Text dimColor>{texte}</Text>)
+      lettresLegende += point.length + texte.length
     }
   }
+  // « En cours » prend la largeur de la bande moins la légende et l'espace entre les deux.
   const courante = actionCourante(p)
+  const placeEnCours = lettres(largeur, e.surface === 'terminal') - lettresLegende - 2 - EN_COURS.length
 
   return (
     <Box key="progression" flexDirection="column" width="100%">
-      {ligneTitre($, e, p.titre, droite, fini, fini, fini)}
+      {ligneTitre($, e, p.titre, droite, fini, fini, fini, fini ? undefined : { texte: temps.estime, depasse })}
       <Box key="progression-piste">{piste}</Box>
       <Box key="progression-legende" flexDirection="row" gap={2}>
         <Button key="progression-detail" plain onPress={() => void basculerJournal($)}>
@@ -1284,7 +1334,7 @@ function bandePiste($: EngineInterface, e: Bande, p: Progression, instant: numbe
         {fini ? (
           <Text color="success">Toutes les actions sont faites · 100 %</Text>
         ) : courante === undefined ? null : (
-          <Text dimColor>{`En cours : ${courante}`}</Text>
+          <Text dimColor wrap="truncate-end">{`${EN_COURS}${couperAuMot(courante, Math.max(10, placeEnCours))}`}</Text>
         )}
       </Box>
     </Box>
@@ -1422,12 +1472,9 @@ function bandeListe($: EngineInterface, e: Bande, p: Progression, instant: numbe
   const fini = terminee(p)
   const pc = fini ? 100 : pourcentage(p)
   const teinte = fini ? VERT : BLEU
-  const reste = resteEstime(p, instant)
-  const droite = fini
-    ? `✓ ${total} étapes · ${duree((p.fin ?? instant) - p.debut)}`
-    : reste === ''
-      ? `${pc} %`
-      : `${pc} % · ${reste}`
+  // En pause (`fin` sans que tout soit fait), le chrono s'arrête et l'estimation se retire.
+  const temps = tempsTitre(p, p.fin ?? instant)
+  const droite = fini ? `✓ ${total} étapes · ${duree((p.fin ?? instant) - p.debut)}` : `${pc} % · ${temps.ecoule}`
   const legende = fini
     ? 'Toutes les étapes sont faites'
     : `${p.fin !== null ? 'En pause · ' : ''}Étape ${rang} sur ${total}${courante === undefined ? '' : ` · ${courante.titre}`}`
@@ -1473,14 +1520,22 @@ function bandeListe($: EngineInterface, e: Bande, p: Progression, instant: numbe
   if (ch.reste > 0) {
     morceaux.push(<Text dimColor>{` +${ch.reste}`}</Text>)
   }
+  const lettresChapelet =
+    [ch.faits, ch.courant, ch.restants].filter(x => x !== '').join(' ').length + (ch.reste > 0 ? ` +${ch.reste}`.length : 0)
+  const placeLegende = lettres(largeur, e.surface === 'terminal') - lettresChapelet - 2 - CHEVRON_FERME.length
 
   return (
     <Box key="progression" flexDirection="column" width="100%">
-      {ligneTitre($, e, p.titre, droite, fini, false, p.fin !== null)}
+      {ligneTitre($, e, p.titre, droite, fini, false, p.fin !== null, p.fin !== null ? undefined : { texte: temps.estime, depasse: temps.depasse })}
       <Box key="progression-barre">{barreDessinee}</Box>
       <Box key="progression-points" flexDirection="row">
         <Button key="progression-detail" plain onPress={() => void basculerJournal($)}>
-          {[...morceaux, <Text>{'  '}</Text>, <Text dimColor>{legende}</Text>, <Text dimColor>{ouvert ? CHEVRON_OUVERT : CHEVRON_FERME}</Text>]}
+          {[
+            ...morceaux,
+            <Text>{'  '}</Text>,
+            <Text dimColor>{couperAuMot(legende, Math.max(10, placeLegende))}</Text>,
+            <Text dimColor>{ouvert ? CHEVRON_OUVERT : CHEVRON_FERME}</Text>,
+          ]}
         </Button>
       </Box>
     </Box>
@@ -1488,6 +1543,7 @@ function bandeListe($: EngineInterface, e: Bande, p: Progression, instant: numbe
 }
 
 async function bande($: EngineInterface, e: Bande, dessous: RenderElement, modele: string): Promise<RenderElement> {
+  largeurBande = { colonnes: e.props.bodyColumns, terminal: e.surface === 'terminal' }
   const r = await lireReglages($)
   const { Box, Button, Text } = $.ui.resolve(e)
 
@@ -2200,10 +2256,11 @@ export const register: Register = (on, options) => {
     const { value: avant = null } = await $.state.get(progression)
     const tache = demarrer(avant, e.text, instant)
     await $.state.set(progression, tache)
-    // Titre 1 : une nouvelle tâche à la consigne longue reçoit un résumé d'une ligne.
+    // Une nouvelle tâche reçoit une durée estimée et, si sa consigne est longue, un résumé d'une ligne.
     // Une minuterie survit à la fin du hook ; une promesse laissée seule, non.
-    if (tache.debut === instant && aResumer(e.text) && (await lireReglages($)).progression) {
-      $.clock.after(1, () => void resumerTitre($, instant, e.text))
+    if (tache.debut === instant && e.text.trim() !== '' && (await lireReglages($)).progression) {
+      const resumer = aResumer(e.text)
+      $.clock.after(1, () => void estimerTache($, instant, e.text, resumer))
     }
     demarrerChrono($)
     await $.state.set(auTravail, true)
